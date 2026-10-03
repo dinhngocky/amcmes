@@ -1,0 +1,22 @@
+{
+  "build": "v20.23-e633a2241a54",
+  "backend": "synthetic fixtures; no live Apps Script timings",
+  "passed": 14,
+  "tests": [
+    "dashboard/login boot does not fetch any business module or Chart.js",
+    "concurrent module calls are deduplicated",
+    "loaded module is reused",
+    "failed module load can be retried",
+    "navigation during lazy loading does not paint the old route",
+    "all generated async implementations bind in browser",
+    "empty-data route smoke: bom",
+    "empty-data route smoke: projects",
+    "empty-data route smoke: material_control",
+    "empty-data route smoke: inventory",
+    "empty-data route smoke: production",
+    "empty-data route smoke: quality",
+    "Chart.js loads on demand and creates the requested chart",
+    "metrics include screen/RPC timing without credentials"
+  ],
+  "pageErrors": []
+}

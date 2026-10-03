@@ -1,0 +1,795 @@
+/* AMCVN v20.24-969a11832328 / supply */
+V223_IMPL["openBOMModal__3378"] = async function(productId){
+  // BẬT POPUP NGAY LẬP TỨC VỚI SKELETON
+  openModal(modalShell({title:'Thiết lập định mức (BOM)', subtitle:'Công thức nguyên vật liệu để tạo ra 1 thành phẩm', icon:'tune',
+    body: '<div id="bomModalContent">' + loadingBlock() + '</div>',
+    footer: '<div id="bomModalFooter"></div>'
+  }), 960);
+
+  // Lấy data ngầm
+  await load('products','getProducts');
+  let comps=[];
+  if(productId){ const r=await gas('getProductBOM',productId); if(r&&r.success&&r.data) comps=(r.data.components||[]).map(c=>({
+    LineType:c.LineType||'Material',
+    ComponentID:c.ComponentID||'',
+    Quantity:Number(c.Quantity)||1,
+    UnitCost:Number(c.UnitCost||c.unitCost)||0,
+    Amount:Number(c.Amount)||0,
+    CostGroup:c.CostGroup||'Khác',
+    CostName:c.CostName||'',
+    Notes:c.Notes||'',
+    CriticalLevel:c.CriticalLevel||'C',
+    SourceType:c.SourceType||'',
+    PreferredSupplierID:c.PreferredSupplierID||'',
+    LeadTimeDays:Number(c.LeadTimeDays)||0,
+    RequiredDate:c.RequiredDate||'',
+    Revision:c.Revision||''
+  })); }
+  BOM_EDIT={productId:productId||'', rows: comps.length?comps:[{LineType:'Material',ComponentID:'',Quantity:1,UnitCost:0,Amount:0,CostGroup:'NVL',CostName:'',Notes:'',CriticalLevel:'C',SourceType:'',PreferredSupplierID:'',LeadTimeDays:0,RequiredDate:'',Revision:''}]};
+  
+  const prod=(STATE.cache.products||[]).find(p=>p.ProductID===productId);
+  
+  // FIX YÊU CẦU 2: Cho phép tạo mới nhanh trong Picker của Thành phẩm
+  const head = productId
+    ? '<div class="rounded-xl border border-line bg-bg/70 px-4 py-3 flex items-center gap-3"><div class="w-9 h-9 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center"><span class="ms">inventory_2</span></div><div class="min-w-0"><div class="text-[13px] font-semibold text-ink truncate">'+esc((prod&&prod.ProductName)||productId)+'</div><div class="text-[11px] text-muted">'+esc((prod&&prod.SKU)||'')+'</div></div><input type="hidden" id="bomProduct" value="'+esc(productId)+'"/></div>'
+    : productPicker({id:'bomProduct', value:'', catFilter:'thanhpham', onpick:'bomProductChanged', placeholder:'Tìm hoặc tạo mới thành phẩm…'});
+  
+  const editor='<div>'
+    + field('Thành phẩm *', head)
+    +'<div class="flex items-center justify-between mt-1 mb-2"><span class="text-[13px] font-semibold text-ink">Nguyên vật liệu cho <b class="text-brand-600">1</b> đơn vị</span><button type="button" onclick="bomAddRow()" class="text-[12px] text-brand-600 font-semibold border border-stroke rounded-lg px-3 py-1.5 hover:bg-brand-50 inline-flex items-center gap-1"><span class="ms text-[15px]">add</span>Thêm NVL</button></div>'
+    +'<div id="bomRows"></div>'
+    +'<div id="bomCostBar" class="mt-2"></div>'
+    +'</div>';
+
+  if($('#bomModalContent')) {
+     $('#bomModalContent').innerHTML = '<div class="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5">'+editor+'<div id="bomCraft"></div></div>';
+     $('#bomModalFooter').outerHTML = (productId?'<button type="button" onclick="confirmDeleteBOM(\''+esc(productId)+'\')" class="mr-auto inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-600 text-[13px] font-semibold hover:bg-rose-100"><span class="ms text-[18px]">delete</span>Xóa định mức</button>':'')+btnSecondary('Huỷ','closeModal()','close')+btnPrimary('Lưu định mức','saveBOM()','save');
+     bomRenderRows();
+  }
+};
+V223_IMPL["saveBOM__3514"] = async function(){
+  const fg=($('#bomProduct')||{}).value||''; if(!fg) return toast('Chọn thành phẩm','error');
+  
+  // KIỂM TRA LỖI TRƯỚC KHI LƯU
+  const rowContainer = $('#bomRows');
+  if(rowContainer && rowContainer.dataset.hasError === 'true') {
+      return toast('Tồn tại nguyên vật liệu đã bị xóa khỏi hệ thống. Vui lòng nhấn Thùng rác để gỡ bỏ trước khi lưu.', 'error');
+  }
+
+  const comps=BOM_EDIT.rows.map(r=>Object.assign({},r,{Quantity:Number(r.Quantity)||0,UnitCost:Number(r.UnitCost)||0,Amount:Number(r.Amount)||0}))
+    .filter(r=>r.LineType==='MoneyCost' ? String(r.CostName||'').trim() && bomCostAmount(r)>0 : r.ComponentID && Number(r.Quantity)>0);
+  if(!comps.length) return toast('Thêm ít nhất 1 dòng định mức','error');
+  if(comps.some(c=>c.LineType!=='MoneyCost' && c.ComponentID===fg)) return toast('Thành phẩm không thể là NVL của chính nó','error');
+  
+  // KIỂM TRA THÀNH PHẨM GỐC CÓ BỊ XÓA KHÔNG
+  const prods=STATE.cache.products||[];
+  if(!prods.some(p => p.ProductID === fg)) return toast('Thành phẩm gốc đã bị xóa khỏi kho. Vui lòng chọn thành phẩm khác.', 'error');
+
+  if(SAVING)return; setSaving(true);
+  toast('Đang lưu định mức...','info');
+  const r=await gas('saveProductBOM',{ProductID:fg,components:comps}); setSaving(false);
+  if(r&&r.success){ toast(r.message); closeModal(); render(); } else toast((r&&r.message)||'Lưu thất bại','error');
+};
+V223_IMPL["deleteBOM__3595"] = async function(productId){
+  if(SAVING) return;
+  setSaving(true);
+  const r=await gas('deleteProductBOM',productId);
+  setSaving(false);
+  if(r&&r.success){
+    toast(r.message||'Đã xóa định mức');
+    closeModal();
+    delete STATE.cache.bomSummary;
+    render();
+  }else toast((r&&r.message)||'Không xóa được định mức','error');
+};
+V223_IMPL["openModuleForm__4067"] = async function(machineId,moduleId){
+  let x={MachineID:machineId};
+  if(moduleId){const r=await gas('getMachineDetail',machineId);if(!r||!r.success){toast(r&&r.message||'Không tải được module','error');return;}x=(r.data.modules||[]).find(v=>String(v.ModuleID)===String(moduleId))||x;}
+  const body=row2(field('Mã module *',inp('modCode','Ví dụ: MOD01','text',x.ModuleCode)),field('Tên module *',inp('modName','Tên module','text',x.ModuleName)))
+    +row2(field('Loại module',inp('modType','SUB_ASSEMBLY','text',x.ModuleType||'SUB_ASSEMBLY')),field('Owner',inp('modOwner','Người phụ trách','text',x.Owner)))
+    +row2(field('Bắt đầu kế hoạch',inp('modStart','','date',amcvnDateValue(x.PlanStart))),field('Hoàn thành kế hoạch',inp('modFinish','','date',amcvnDateValue(x.PlanFinish))))
+    +row3(field('Tiến độ (%)',inp('modProgress','0','number',x.ProgressPercent||0)),field('Vật tư',sel('modMaterial',['NOT_READY','PARTIAL','READY','BLOCKED'],x.MaterialStatus||'NOT_READY')),field('Lắp ráp',sel('modAssembly',['NOT_STARTED','IN_PROGRESS','COMPLETED','BLOCKED'],x.AssemblyStatus||'NOT_STARTED')))
+    +field('Ghi chú',txt('modNotes','Ghi chú module',x.Notes));
+  const remove=moduleId&&canDelete('projects')?'<button onclick="confirmAmcvnDelete(\'module\','+esc(jsArg(moduleId))+','+esc(jsArg(machineId))+')" class="mr-auto px-4 py-2.5 rounded-xl text-[13px] font-semibold text-rose-600 hover:bg-rose-50 inline-flex items-center gap-1"><span class="ms">delete</span>Xóa</button>':'';
+  const footer=remove+btnSecondary('Hủy','closeModal()','close')+btnPrimary(moduleId?'Lưu thay đổi':'Tạo module','saveModule('+jsArg(machineId)+','+jsArg(moduleId||'')+')','save');
+  openModal(modalShell({title:moduleId?'Cập nhật module':'Thêm module',subtitle:'Module thuộc một máy cụ thể',icon:'view_module',body,footer}),720);
+};
+V223_IMPL["saveModule__4079"] = async function(machineId,moduleId){
+  const data={MachineID:machineId,ModuleCode:amcvnVal('modCode'),ModuleName:amcvnVal('modName'),ModuleType:amcvnVal('modType'),Owner:amcvnVal('modOwner'),PlanStart:amcvnVal('modStart'),PlanFinish:amcvnVal('modFinish'),ProgressPercent:amcvnVal('modProgress'),MaterialStatus:amcvnVal('modMaterial'),AssemblyStatus:amcvnVal('modAssembly'),Notes:amcvnVal('modNotes')};
+  const r=moduleId?await gas('updateMachineModule',moduleId,data):await gas('createMachineModule',data);
+  if(!r||!r.success){toast(r&&r.message||'Không lưu được module','error');return;}
+  toast(r.message);closeModal();delete STATE.cache.projects;openMachineDetail(machineId);
+};
+V223_IMPL["renderBOMManagement__4336"] = async function(p){
+  p.dataset.module='bom';p.innerHTML=loadingBlock();
+  const r=await gas('getBOMManagementData');
+  if(STATE.route!=='bom')return;
+  if(!r||!r.success){p.innerHTML=emptyState(r&&r.message||'Không tải được danh sách BOM');return;}
+  BOM_MANAGEMENT_ROWS=r.data||[];
+  if(APP_CONTEXT.projectId&&!BOM_MANAGEMENT_PROJECT)BOM_MANAGEMENT_PROJECT=APP_CONTEXT.projectId;
+  const projects=new Map();BOM_MANAGEMENT_ROWS.forEach(x=>projects.set(x.ProjectID,(x.ProjectCode||'')+' · '+(x.ProjectName||'')));
+  const options=[{v:'',t:'Tất cả dự án'}].concat(Array.from(projects,([v,t])=>({v,t})));
+  p.innerHTML=pageHeader('Quản lý BOM','Chọn máy để quản lý cụm chi tiết, nhập Excel và phát hành phiên bản',btnSecondary('Task BOM / ECN','openBOMTasks()','task_alt')+btnPrimary('Tạo BOM mới','openQuickBOMCreate()','add')+btnSecondary('Làm mới',"go('bom')",'refresh'))
+    +card('<div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">'+sel('bomProjectFilter',options,BOM_MANAGEMENT_PROJECT).replace('class="fld"','class="fld" onchange="BOM_MANAGEMENT_PROJECT=this.value;filterBOMManagement()"')
+    +inp('bomSearch','Tìm mã máy, tên máy, dự án','search',BOM_MANAGEMENT_QUERY).replace('class="fld"','class="fld" oninput="BOM_MANAGEMENT_QUERY=this.value;filterBOMManagement()"')+'</div>')+'<div id="bomManagementList" class="mt-4"></div>';
+  filterBOMManagement();
+};
+V223_IMPL["loadMaterialDashboard__4713"] = async function(force){
+  if(MATERIAL_DASH_CACHE&&!force)return MATERIAL_DASH_CACHE;
+  const r=await gas('getMaterialControlDashboard');
+  if(!r||!r.success)throw new Error(r&&r.message||'Không tải được Material Control');
+  MATERIAL_DASH_CACHE=r.data||{};return MATERIAL_DASH_CACHE;
+};
+V223_IMPL["renderMaterialControlTab__4719"] = async function(tab){
+  if(tab==='requests')return renderPurchaseRequisitions();
+  const body=$('#tabBody');if(!body)return;body.innerHTML=loadingBlock();
+  try{
+    const d=await loadMaterialDashboard(true),k=d.kpi||{};
+    const ctxMatch=x=>(!APP_CONTEXT.projectId||x.ProjectID===APP_CONTEXT.projectId)&&(!APP_CONTEXT.machineId||x.MachineID===APP_CONTEXT.machineId);
+    const kpis='<div class="grid grid-cols-2 xl:grid-cols-5 gap-3 mb-5">'
+      +kpiCard('BOM lines',fmtNum(k.totalLines||0),'format_list_numbered','bg-blue-50 text-blue-600')
+      +kpiCard('Ready',fmtNum(k.readyLines||0),'check_circle','bg-emerald-50 text-emerald-600')
+      +kpiCard('In transit',fmtNum(k.inTransitLines||0),'local_shipping','bg-cyan-50 text-cyan-600')
+      +kpiCard('Shortage',fmtNum(k.shortageLines||0),'warning','bg-amber-50 text-amber-600')
+      +kpiCard('Critical A',fmtNum(k.criticalShortage||0),'report','bg-rose-50 text-rose-600')+'</div>';
+    if(tab==='shortage'){renderMaterialShortages(body,kpis,(d.shortages||[]).filter(ctxMatch));return;}
+    if(tab==='exceptions'){
+      const cols=[{label:'Risk',render:x=>materialCriticalBadge(x.RiskLevel==='HIGH'?'A':(x.RiskLevel==='MEDIUM'?'B':'C'))},{label:'Loại',render:x=>badge(amcvnStatusLabel(x.ExceptionType))},{label:'Mô tả',key:'Description'},{label:'Owner',key:'Owner'},{label:'Hành động',key:'Action'},{label:'Hạn xử lý',render:x=>fmtDate(x.DueDate)||'-'},{label:'Trạng thái',render:x=>badge(amcvnStatusLabel(x.Status))},{label:'',render:x=>canEdit('material_control')?'<button onclick="event.stopPropagation();openMaterialExceptionForm('+jsArg(x.MachineID)+','+jsArg(x.ExceptionID)+')" class="text-brand-600"><span class="ms">edit</span></button>':''}];
+      body.innerHTML=kpis+card(procTable(cols,(d.exceptions||[]).filter(ctxMatch),{empty:'Không có ngoại lệ vật tư đang mở.'}));return;
+    }
+    const cols=[{label:'Project',key:'ProjectCode'},{label:'Machine',key:'MachineCode'},{label:'CTB',render:x=>'<div><b>'+Math.round(Number(x.CTBPercent)||0)+'%</b><div class="mt-1">'+materialCTBBadge(x.CTBStatus)+'</div></div>'},{label:'Ready lines',render:x=>fmtNum(x.ReadyLines||0)+' / '+fmtNum(x.TotalLines||0)},{label:'Shortage',right:true,render:x=>'<b class="'+(x.ShortageLines?'text-amber-600':'text-emerald-600')+'">'+fmtNum(x.ShortageLines||0)+'</b>'},{label:'Critical A',right:true,render:x=>'<b class="'+(x.CriticalShortage?'text-rose-600':'text-emerald-600')+'">'+fmtNum(x.CriticalShortage||0)+'</b>'},{label:'FAT kế hoạch',render:x=>fmtDate(x.PlanFATDate)||'-'},{label:'Owner',key:'Owner'}];
+    body.innerHTML=kpis+card(procTable(cols,(d.machines||[]).filter(ctxMatch),{empty:'Chưa có máy để tính CTB.',idKey:'MachineID',onRowClick:'openMachineMaterials'}));
+  }catch(e){ console.warn('[renderMaterialControlTab]', (e && e.message) || String(e)); body.innerHTML=emptyState(e.message);}
+};
+V223_IMPL["openMaterialRequirement__4764"] = async function(requirementId){ return openMaterialRequirementForm('',requirementId); };
+V223_IMPL["openMaterialRequirementForm__4765"] = async function(machineId,requirementId){
+  let req={MachineID:machineId},machine=null,modules=[],logs=[];
+  if(requirementId){const r=await gas('getMaterialRequirementDetail',requirementId);if(!r||!r.success){toast(r&&r.message||'Không tải được vật tư','error');return;}req=r.data.requirement||req;machine=r.data.machine;logs=r.data.logs||[];machineId=req.MachineID;}
+  const mr=await gas('getMachineDetail',machineId);if(mr&&mr.success){machine=mr.data.machine;modules=mr.data.modules||[];}
+  let products=[];try{const pr=await gas('getAMCVNProductOptions');if(pr&&pr.success)products=pr.data||[];}catch(_){ console.warn('[openMaterialRequirementForm]', (_ && _.message) || String(_)); }
+  const productOptions=[{v:'',t:'-- Chọn vật tư --'}].concat(products.map(p=>({v:p.ProductID,t:(p.SKU?p.SKU+' — ':'')+p.ProductName})));
+  const moduleOptions=[{v:'',t:'-- Toàn máy --'}].concat(modules.map(m=>({v:m.ModuleID,t:m.ModuleCode+' — '+m.ModuleName})));
+  const productField=requirementId?'<div class="fld bg-bg">'+esc((req.SKU?req.SKU+' — ':'')+req.ProductName)+'</div>':sel('mrProduct',productOptions,req.ProductID||'');
+  const history=logs.length?'<div class="mt-4 pt-4 border-t border-line"><div class="font-semibold text-[13px] mb-2">Lịch sử gần nhất</div>'+logs.slice(0,4).map(l=>'<div class="flex justify-between gap-3 py-2 border-t border-line text-[11px]"><span>'+esc(amcvnStatusLabel(l.OldStatus))+' → <b>'+esc(amcvnStatusLabel(l.NewStatus))+'</b></span><span class="text-muted">'+fmtDate(l.CreatedAt)+'</span></div>').join('')+'</div>':'';
+  const body=field('Vật tư *',productField)
+    +row3(field('Số lượng yêu cầu *',inp('mrRequired','0','number',req.RequiredQty||1)),field('Đã cấp cho máy',inp('mrAllocated','0','number',req.AllocatedQty||0)),field('Ngày cần',inp('mrDate','','date',amcvnDateValue(req.RequiredDate))))
+    +row3(field('Critical level',sel('mrCritical',['A','B','C'],req.CriticalLevel||'C')),field('Module',sel('mrModule',moduleOptions,req.ModuleID||'')),field('Nguồn cung',sel('mrSource',['','VN_LOCAL','CHINA','CUSTOMER_SUPPLY','STOCK','MACHINING','OUTSOURCE'],req.SourceType||'')))
+    +row2(field('Owner',inp('mrOwner','Người phụ trách','text',req.Owner)),field('Material status',sel('mrStatus',MATERIAL_LIFECYCLE,req.MaterialStatus||'DEMAND_CREATED')))
+    +row2(field('Mã PO',inp('mrPO','PO liên quan','text',req.PurchaseID)),field('Nhà cung cấp',inp('mrSupplier','Tên nhà cung cấp','text',req.SupplierName)))
+    +field('Ghi chú cập nhật',txt('mrNote','Lý do hoặc diễn biến mới',''))+history;
+  const remove=requirementId&&canDelete('material_control')?'<button onclick="confirmDeleteMaterialRequirement('+esc(jsArg(requirementId))+','+esc(jsArg(machineId))+')" class="mr-auto px-4 py-2.5 rounded-xl text-[13px] font-semibold text-rose-600 hover:bg-rose-50 inline-flex items-center gap-1"><span class="ms">delete</span>Xóa</button>':'';
+  const footer=remove+btnSecondary('Hủy','closeModal()','close')+btnPrimary(requirementId?'Cập nhật':'Thêm vật tư','saveMaterialRequirement('+jsArg(machineId)+','+jsArg(requirementId||'')+')','save');
+  openModal(modalShell({title:requirementId?'Cập nhật Material Status':'Thêm nhu cầu vật tư',subtitle:(machine&&machine.MachineCode)||'',icon:'inventory',body,footer}),820);
+};
+V223_IMPL["saveMaterialRequirement__4784"] = async function(machineId,requirementId){
+  const data={MachineID:machineId,ProductID:amcvnVal('mrProduct'),RequiredQty:amcvnVal('mrRequired'),AllocatedQty:amcvnVal('mrAllocated'),RequiredDate:amcvnVal('mrDate'),CriticalLevel:amcvnVal('mrCritical'),ModuleID:amcvnVal('mrModule'),SourceType:amcvnVal('mrSource'),Owner:amcvnVal('mrOwner'),MaterialStatus:amcvnVal('mrStatus'),PurchaseID:amcvnVal('mrPO'),SupplierName:amcvnVal('mrSupplier'),Note:amcvnVal('mrNote'),ActualDate:new Date().toISOString()};
+  if(requirementId)delete data.ProductID;
+  const r=requirementId?await gas('updateMaterialRequirement',requirementId,data):await gas('createMaterialRequirement',data);
+  if(!r||!r.success){toast(r&&r.message||'Không lưu được vật tư','error');return;}
+  toast(r.message);closeModal();MATERIAL_DASH_CACHE=null;delete STATE.cache.projects;openMachineMaterials(machineId);
+};
+V223_IMPL["deleteMaterialRequirementUI__4796"] = async function(id,machineId){
+  const r=await gas('deleteMaterialRequirement',id);if(!r||!r.success){toast(r&&r.message||'Không xóa được','error');return;}
+  toast(r.message);closeModal();MATERIAL_DASH_CACHE=null;delete STATE.cache.projects;openMachineMaterials(machineId);
+};
+V223_IMPL["openMaterialExceptionForm__4801"] = async function(machineId,exceptionId){
+  let x={MachineID:machineId};
+  try{const d=await loadMaterialDashboard(false);if(exceptionId)x=(d.exceptions||[]).find(v=>String(v.ExceptionID)===String(exceptionId))||x;}catch(_){ console.warn('[openMaterialExceptionForm]', (_ && _.message) || String(_)); }
+  const body=row2(field('Loại ngoại lệ',sel('mexType',['SHORTAGE','SUPPLIER_DELAY','CUSTOMS','IQC_REJECT','WRONG_PART','MISSING_LABEL','LOST_MATERIAL','WRONG_MACHINE','OTHER'],x.ExceptionType||'OTHER')),field('Risk',sel('mexRisk',AMCVN_RISK_OPTIONS,x.RiskLevel||'MEDIUM')))
+    +field('Mô tả *',txt('mexDesc','Mô tả vấn đề',x.Description))+row2(field('Owner',inp('mexOwner','Người phụ trách','text',x.Owner)),field('Hạn xử lý',inp('mexDue','','date',amcvnDateValue(x.DueDate))))
+    +field('Action',txt('mexAction','Hành động khắc phục',x.Action))+field('Trạng thái',sel('mexStatus',['OPEN','IN_PROGRESS','CLOSED'],x.Status||'OPEN'));
+  const footer=btnSecondary('Hủy','closeModal()','close')+btnPrimary(exceptionId?'Cập nhật':'Tạo exception','saveMaterialException('+jsArg(machineId)+','+jsArg(exceptionId||'')+')','save');
+  openModal(modalShell({title:exceptionId?'Cập nhật Material Exception':'Tạo Material Exception',icon:'warning',body,footer}),680);
+};
+V223_IMPL["saveMaterialException__4810"] = async function(machineId,exceptionId){
+  const data={MachineID:machineId,ExceptionType:amcvnVal('mexType'),RiskLevel:amcvnVal('mexRisk'),Description:amcvnVal('mexDesc'),Owner:amcvnVal('mexOwner'),DueDate:amcvnVal('mexDue'),Action:amcvnVal('mexAction'),Status:amcvnVal('mexStatus')};
+  const r=exceptionId?await gas('updateMaterialException',exceptionId,data):await gas('createMaterialException',data);
+  if(!r||!r.success){toast(r&&r.message||'Không lưu được exception','error');return;}
+  toast(r.message);closeModal();MATERIAL_DASH_CACHE=null;if(STATE.route==='material_control'){STATE.tab.material_control='exceptions';render();}else openMachineMaterials(machineId);
+};
+V223_IMPL["renderPurchasingTab__5001"] = async function(tab){
+  if(tab==='general_requests')return renderGeneralPurchaseStart();
+  if(tab==='sourcing')return renderProcurement();
+  if(tab==='requests')return renderPurchaseRequisitions();
+  const body=$('#tabBody'); body.innerHTML=loadingBlock();
+  if(tab==='returns'){ await renderPurchaseReturnsTab(body); return; }
+  if(tab==='overview'){
+    const po=await load('purchases','getPurchaseOrders');
+    const sup=await load('suppliers','getSuppliers');
+    const prList=await load('purchaseReturns','getPurchaseReturns');
+    const prActive=(prList||[]).filter(r=>!isCancelled_(String(r.Status||'')));
+    const prTotal=prActive.reduce((s,r)=>s+Number(r.TotalAmount||0),0);
+    const gross=po.reduce((s,p)=>s+Number(p.TotalAmount||0),0);
+    const total=gross-prTotal;   // mua vào đã TRỪ hàng trả lại NCC
+    const payable=po.reduce((s,p)=>s+Number(p.PayableAmount||0),0);
+    body.innerHTML='<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-4">'
+      +kpiCard('Mua hàng (thuần)', '<span id="poKpiTotal">'+fmtVND(total)+'</span>','shopping_cart','bg-brand-50 text-brand-600')
+      +kpiCard('Số phiếu mua', '<span id="poKpiCount">'+fmtNum(po.length)+'</span>','receipt_long','bg-indigo-50 text-indigo-600')
+      +kpiCard('Công nợ phải trả', '<span id="poKpiPayable">'+fmtVND(payable)+'</span>','payments','bg-rose-50 text-rose-600')
+      +kpiCard('NCC trong bộ lọc', '<span id="poKpiSuppliers">'+fmtNum(sup.length)+'</span>','store','bg-emerald-50 text-emerald-600')
+      +'</div>'
+      +(prTotal>0
+        ? '<div class="rounded-2xl border border-line bg-white shadow-card px-5 py-3 mb-4 flex items-center gap-3 flex-wrap text-[13px]">'
+          +'<span class="ms text-rose-500 text-[20px]">assignment_return</span>'
+          +'<span class="text-muted">Mua vào <b class="text-ink">'+fmtVND(gross)+'</b></span><span class="text-muted">-</span>'
+          +'<span class="text-muted">Trả lại NCC <b class="text-rose-600">'+fmtVND(prTotal)+'</b> ('+fmtNum(prActive.length)+' phiếu)</span>'
+          +'<span class="text-muted">=</span><span class="font-semibold text-ink">Mua thuần '+fmtVND(total)+'</span>'
+          +'<button onclick="selectTab(\'returns\')" class="ml-auto text-brand-600 font-semibold hover:underline">Xem phiếu trả NCC</button></div>'
+        : '')
+      +'<div class="flex items-center justify-between mb-3"><h3 class="font-semibold text-ink">Danh sách phiếu mua</h3>'+btnPrimary('Tạo phiếu mua','openPurchaseModal()','add')+'</div>'
+      +filterableTable('poOverview', po.slice().reverse(), poCols(true), {search:['PurchaseID','SupplierName'], searchPlaceholder:'Tìm theo mã phiếu, NCC...', selects:[{field:'PaymentStatus',label:'Thanh toán'},{field:'Status',label:'Trạng thái'}], dateField:'PurchaseDate', onRowClick:'viewPurchase', idKey:'PurchaseID', onFilter:updatePurchaseKpis, sorts:[{value:'date:PurchaseDate',label:'Đơn mới nhất / ngày mua'},{value:'field:PurchaseID',label:'Mã phiếu'},{value:'field:SupplierName',label:'Nhà cung cấp A-Z'},{value:'field:TotalAmount',label:'Tổng tiền'},{value:'field:PayableAmount',label:'Còn nợ'}]});
+    return;
+  }
+  if(tab==='suppliers'){
+    const sup=await load('suppliers','getSuppliers');
+    body.innerHTML=filterableTable('sup', sup, supCols(), {search:['SupplierName','Phone','SupplierID'], searchPlaceholder:'Tìm nhà cung cấp...', selects:[{field:'Category',label:'Nhóm'},{field:'Status',label:'Trạng thái'}], onRowClick:'viewSupplier', idKey:'SupplierID', action:btnPrimary('Thêm NCC','openSupplierModal()')});
+    return;
+  }
+  if(tab==='orders'){
+    const po=await load('purchases','getPurchaseOrders');
+    body.innerHTML=filterableTable('po', po.slice().reverse(), poCols(true), {search:['PurchaseID','SupplierName'], searchPlaceholder:'Tìm theo mã phiếu, NCC...', selects:[{field:'PaymentStatus',label:'Thanh toán'}], dateField:'PurchaseDate', onRowClick:'viewPurchase', idKey:'PurchaseID', action:btnPrimary('Tạo phiếu mua','openPurchaseModal()')});
+    return;
+  }
+  if(tab==='debt'){
+    const r=await gas('getPayables'); const rows=sortByOverduePay(r.data||[]).map(x=>Object.assign({},x,{TinhTrang:x.Overdue?'Quá hạn':x.PaymentStatus}));
+    body.innerHTML=filterableTable('podebt', rows, [
+      {label:'Mã phiếu',key:'PurchaseID'},{label:'NCC',key:'SupplierName'},{label:'Tổng tiền',right:true,render:r=>fmtVND(r.TotalAmount)},
+      {label:'Đã trả',right:true,render:r=>fmtVND(r.PaidAmount)},{label:'Còn nợ',right:true,render:r=>'<span class="'+(r.Overdue?'text-rose-600 font-semibold':'')+'">'+fmtVND(r.PayableAmount)+'</span>'},
+      {label:'Hạn trả',render:r=>fmtDate(r.DueDate)},{label:'Tình trạng',render:r=>badge(r.TinhTrang)},
+      {label:'',render:r=>'<button onclick="event.stopPropagation();openPaymentModal(\'PurchaseOrder\',\''+r.PurchaseID+'\','+Number(r.PayableAmount)+')" class="text-brand-600 text-[12px] font-semibold hover:underline">Thanh toán</button>'}
+    ], {search:['PurchaseID','SupplierName'], searchPlaceholder:'Tìm phiếu mua, NCC...', selects:[{field:'TinhTrang',label:'Tình trạng'}], dateField:'DueDate', idKey:'PurchaseID', onRowClick:'viewPurchase', empty:'Không có công nợ phải trả'});
+    return;
+  }
+};
+V223_IMPL["saveSupplier__8090"] = async function(id){
+  const data={BankAccount:amcvnVal('sBankAccount'),BankName:amcvnVal('sBankName'),SupplierName:$('#sName').value,ContactPerson:$('#sContact').value,Phone:$('#sPhone').value,Email:$('#sEmail').value,TaxCode:$('#sTax').value,Website:$('#sWeb').value,Category:$('#sCat').value,Address:$('#sAddr').value,Notes:$('#sNotes').value};
+  if(!data.SupplierName) return toast('Nhập tên NCC','error');
+  
+  if(SAVING)return; setSaving(true);
+  
+  // Lưu NCC
+  const r=id ? await gas('updateSupplier',id,data) : await gas('createSupplier',data);
+  if(r.success){
+    const supplierId=id || ((r.data||{}).SupplierID);
+    const debt=moneyVal('sOpeningDebt');
+    if(supplierId && $('#sOpeningDebt')) await gas('setSupplierOpeningDebt', supplierId, debt, 'Ghi nhận nợ cũ đầu kỳ');
+  }
+
+  setSaving(false);
+  if(r.success){toast(r.message);closeModal();await reprime('suppliers','purchases','debt');render();}else toast(r.message,'error');
+};
+V223_IMPL["openPurchaseModal__8808"] = async function(id, prefillProductId){
+  const preparing=!!id || !STATE.cache.products || !STATE.cache.suppliers || !financeModalReady();
+  if(preparing) openModalLoading(id?'Đang tải phiếu mua...':'Tạo phiếu mua hàng','shopping_cart',760);
+  const seq=preparing?MODAL_SEQ:0;
+  await Promise.all([load('products','getProducts'),load('suppliers','getSuppliers'),whLoad().catch(()=>[]),ensureFinanceModalData().catch(()=>null)]);
+  if(seq&&(!MODAL_OPEN||MODAL_SEQ!==seq)) return;
+  LINE_PRICE_MODE='cost'; LINE_STOCK_MODE='none'; LINE_PICK_LOCKED=false; LINE_ITEMS=[]; LINE_VAT_DOC=true;
+  let order=null, detail=null;
+  
+  // NẾU SỬA PHIẾU: Tải dữ liệu phiếu cũ
+  if(id){ 
+      const r=await detailGet('getPurchaseDetail',id); 
+      if(!r.success) return toast(r.message,'error'); 
+      detail=r.data||{}; order=detail.order||{}; 
+      LINE_ITEMS=(detail.items||[]).map(it=>({ProductID:it.ProductID,Quantity:Number(it.Quantity)||1,price:Number(it.UnitCost)||0,_originalQty:0})); 
+  } 
+  // NẾU TẠO MỚI TỪ NÚT NHANH (Auto-fill NVL)
+  else if (prefillProductId) {
+      const prefillItem = (STATE.cache.products||[]).find(x => x.ProductID === prefillProductId);
+      if (prefillItem) {
+          LINE_ITEMS.push({
+              ProductID: prefillItem.ProductID, 
+              Quantity: 1, 
+              price: Number(prefillItem.CostPrice)||0, 
+              _originalQty: 0
+          });
+      }
+  }
+  
+  const selectedId=(order&&order.SupplierID)||'';
+  const poTaxBase=order?(Number(order.Subtotal||0)-Number(order.Discount||0)):0;
+  const poVatPct=order?(poTaxBase>0?Math.round(Number(order.VAT||0)/poTaxBase*100):0):defaultVat();
+  openModal(modalShell({title:id?'Sửa phiếu mua '+id:'Tạo phiếu mua hàng', subtitle:'Chọn NCC, sản phẩm, chiết khấu và công nợ phải trả rõ ràng', icon:'shopping_cart',
+    body:'<input type="hidden" id="poId" value="'+esc(id||'')+'"/>'
+      +field('Nhà cung cấp *', entityPicker({id:'poSupplier',kind:'supplier',value:selectedId}))
+      +row2(field('Ngày mua', inp('poDate','','datetime-local',order&&order.PurchaseDate?window.localDateTime(order.PurchaseDate):window.localDateTime(Date.now()))),field('Hạn thanh toán', inp('poDue','','date',order&&order.DueDate?String(order.DueDate).slice(0,10):'')))
+      +row2(field('Trạng thái nghiệp vụ', sel('poStatus',['Đã đặt hàng','Đã nhập kho','Hoàn tất','Đã hủy'], (order&&order.Status)||'Đã nhập kho')), field('VAT (%)', inp('poVat','','number',poVatPct)))
+      +whField('poWarehouse', order&&order.WarehouseID, 'Nhập vào kho', 'Hàng mua về sẽ cộng tồn cho kho này')
+      +invoiceFields('po', order)
+      +'<div id="lineVatBar">'+vatLineToggle('po')+'</div>'
+      +linePicker('Sản phẩm')
+      +row3(field('Chiết khấu', discountControl('po',order&&order.Discount||0), 'Chọn giảm theo số tiền hoặc phần trăm tạm tính'), field('Phí vận chuyển (đ)', moneyInp('poShip',order&&order.ShippingFee||0)), field('Đã thanh toán (đ)', paidControl('po',order&&order.PaidAmount||0)))
+      +paidPayZone('po','PurchaseOrder',(order&&order.Method)||'Tiền mặt')
+      +field('Ghi chú', txt('poNotes','Ghi chú nội bộ cho phiếu mua...',order&&order.Notes||''))
+      +discountSummary('po'),
+    footer:btnSecondary('Hủy','closeModal()','close')+btnPrimary(id?'Lưu thay đổi':'Tạo phiếu mua','savePurchase()','save')}),760);
+  PAY_BILL={data:'',name:'',mimeType:'',amount:0,text:'',uploadUrl:'',maxAmount:0};
+  initPayBillToggle('poMethod');
+  payAccountSync('poMethod','poAccount');
+  paidZoneSync('po');
+  refreshLines();
+};
+V223_IMPL["savePurchase__8861"] = async function(){
+  if(!LINE_ITEMS.length) return toast('Thêm ít nhất 1 sản phẩm','error');
+  if(!$('#poSupplier').value) return toast('Chọn nhà cung cấp','error');
+  const id=($('#poId')||{}).value||'';
+  const paid=moneyVal('poPaid');
+  const method=($('#poMethod')||{}).value||'Tiền mặt';
+  const accId=($('#poAccount')||{}).value||'';
+  if(paid>0 && !accId) return toast('Chọn tài khoản thanh toán','error');
+  const data={SupplierID:$('#poSupplier').value,PurchaseDate:$('#poDate').value,DueDate:$('#poDue').value,WarehouseID:whVal('poWarehouse'),
+    Status:$('#poStatus').value,VATPercent:Number($('#poVat').value)||0,ShippingFee:moneyVal('poShip'),
+    Discount:discountAmount('po', LINE_ITEMS.reduce((s,l)=>s+(Number(l.Quantity)||0)*(Number(l.price)||0),0)),PaidAmount:paid,Notes:$('#poNotes').value,
+    Method:method, AccountID:paid>0?accId:'',
+    items:vatItemsPayload(LINE_ITEMS.map(l=>({ProductID:l.ProductID,Quantity:l.Quantity,UnitCost:l.price})))};
+  Object.assign(data, invoicePayload('po'));
+  if(!(await vatWarnDuplicate('PurchaseOrders','po',id))) return;
+  if(SAVING)return; setSaving(true);
+  if(method==='Chuyển khoản' && PAY_BILL.data && paid>0){
+    toast('Đang tải bill chuyển khoản lên Drive...','info');
+    const up=await gas('uploadTransferBill',{data:PAY_BILL.data,name:PAY_BILL.name,mimeType:PAY_BILL.mimeType});
+    if(up&&up.success&&up.data){ data.BillImageUrl=up.data.url; data.BillAmount=PAY_BILL.amount||''; data.BillOcrText=PAY_BILL.text||''; }
+    else { setSaving(false); return toast((up&&up.message)||'Không thể tải bill lên Drive','error'); }
+  }
+  toast(id?'Đang cập nhật...':'Đang tạo...','info');
+  const r=id ? await gas('updatePurchaseOrder',id,data) : await gas('createPurchaseOrder',data); setSaving(false);
+  if(r.success){toast(r.message);closeModal();await reprime('purchases','products','movements','suppliers');delete STATE.cache.finance;render();}else toast(r.message,'error');
+};
+V223_IMPL["viewPurchase__9776"] = async function(id){
+  openModalLoading('Phi\u1ebfu mua '+id,'shopping_cart',760);
+  const r=await detailGet('getPurchaseDetail',id);
+  if(!r.success){ closeModal(); return toast(r.message,'error'); }
+  const d=r.data; const o=d.order||{};
+  $('#modalBox').innerHTML=modalShell({title:'Phi\u1ebfu mua '+id, subtitle:o.SupplierName||'', icon:'shopping_cart',
+    body:'<div class="flex items-center justify-between text-[13px] mb-4"><span class="text-muted">Ng\u00e0y mua: <b class="text-ink">'+fmtDate(o.PurchaseDate)+'</b></span><div class="flex items-center gap-2">'+badge(o.Status||'\u0110\u00e3 nh\u1eadp kho')+badge(o.PaymentStatus)+'</div></div>'
+      +detailItemsTable([{label:'S\u1ea3n ph\u1ea9m',key:'ProductName'},{label:'SL',right:true,key:'Quantity'},{label:'\u0110\u01a1n gi\u00e1',right:true,render:r=>fmtVND(r.UnitCost)},{label:'Th\u00e0nh ti\u1ec1n',right:true,render:r=>fmtVND(r.LineTotal)}], d.items||[])
+      +detailTotals([['T\u1ed5ng ti\u1ec1n',fmtVND(o.TotalAmount),'font-bold text-ink'],['\u0110\u00e3 tr\u1ea3',fmtVND(o.PaidAmount),'text-emerald-600'],['C\u00f2n n\u1ee3',fmtVND(o.PayableAmount),'text-rose-600 font-semibold']])
+      +paymentTimeline(d.payments,'Lịch sử chi tiền / công nợ'),
+    footer:btnSecondary('X\u00f3a','confirmDelete(\'purchase\',\''+id+'\')','delete')+btnSecondary('S\u1eeda','openPurchaseModal(\''+id+'\')','edit')+btnSecondary('In / G\u1eedi','openDocModal(\'purchase\',\''+id+'\')','print')+(Number(o.PayableAmount)>0?btnPrimary('Thanh to\u00e1n','closeModal();openPaymentModal(\'PurchaseOrder\',\''+id+'\','+Number(o.PayableAmount)+')','payments'):'')});
+};
+V223_IMPL["renderPurchaseReturnsTab__11609"] = async function(body) {
+  const list = await load('purchaseReturns', 'getPurchaseReturns');
+  const rows = list.map(r => Object.assign({}, r, { DisplayStatus: pretDisplayStatus(r) })).slice().reverse();
+  body.innerHTML = filterableTable('pret', rows, [
+    { label: 'Mã phiếu', key: 'PurchaseReturnID' },
+    { label: 'Ngày trả', render: r => fmtDate(r.ReturnDate) },
+    { label: 'Nhà cung cấp', key: 'SupplierName' },
+    { label: 'Phiếu mua gốc', key: 'PurchaseID' },
+    { label: 'Giá trị trả', right: true, render: r => pretMoney(r.TotalAmount) },
+    { label: 'NCC còn phải hoàn', right: true, render: r => Number(r.RefundAmount) > 0 ? '<span class="font-bold text-amber-600">' + pretMoney(r.RefundAmount) + '</span>' : '<span class="text-muted">-</span>' },
+    { label: 'Kiểu xử lý', render: r => esc(r.ReturnType || '') },
+    { label: 'Lý do', render: r => esc(r.Reason || '') },
+    { label: 'Ghi chú', render: r => noteCell('PurchaseReturns', r.PurchaseReturnID, r.Notes) },
+    { label: 'Trạng thái', render: r => badge(r.DisplayStatus) },
+    {
+      label: '', right: true, render: r => actCell([
+        { icon: 'visibility', onclick: "viewPurchaseReturn('" + r.PurchaseReturnID + "')", color: 'text-brand-600', title: 'Xem chi tiết' },
+        { icon: 'edit', onclick: "openPurchaseReturnModal('" + r.PurchaseReturnID + "')", color: 'text-brand-600', title: 'Sửa phiếu' },
+        { icon: 'block', onclick: "confirmCancelPurchaseReturn('" + r.PurchaseReturnID + "')", color: 'text-amber-600', title: 'Hủy phiếu (giữ chứng từ)' },
+        { icon: 'delete', onclick: "confirmDeletePurchaseReturn('" + r.PurchaseReturnID + "')", color: 'text-rose-500', title: 'Xóa phiếu' }
+      ])
+    }
+  ], {
+    search: ['PurchaseReturnID', 'SupplierName', 'PurchaseID'], searchPlaceholder: 'Tìm phiếu trả, nhà cung cấp, phiếu mua...',
+    selects: [{ field: 'ReturnType', label: 'Kiểu xử lý' }, { field: 'DisplayStatus', label: 'Trạng thái' }],
+    dateField: 'ReturnDate', defaultSortField: 'CreatedAt', onRowClick: 'viewPurchaseReturn',
+    idKey: 'PurchaseReturnID', bulkKind: 'purchasereturn', exportName: 'tra-hang-ncc',
+    empty: 'Chưa có phiếu trả hàng nhà cung cấp',
+    action: btnPrimary('Tạo phiếu trả NCC', 'openPurchaseReturnModal()', 'assignment_return')
+  });
+};
+V223_IMPL["openPurchaseReturnModal__11642"] = async function(editId) {
+  await load('products', 'getProducts');
+  await load('suppliers', 'getSuppliers');
+  await load('purchases', 'getPurchaseOrders');
+  await whLoad().catch(function(){ return []; });
+  PRET = { items: [], purchaseId: '', supplierId: '', supplierName: '', editId: editId || '', locked: false, remain: {} };
+
+  let head = { ReturnDate: '', ReturnType: 'Trừ công nợ', RefundMethod: 'Đối trừ công nợ', Warehouse: '', Reason: '', Notes: '' };
+  if (editId) {
+    const r = await detailGet('getPurchaseReturnDetail', editId);
+    if (!r.success) return toast(r.message, 'error');
+    const d = r.data, o = d.ret || {};
+    if (isCancelled_(String(o.Status || ''))) return toast('Phiếu đã hủy, không sửa được. Hãy tạo phiếu mới.', 'error');
+    head = {
+      ReturnDate: localDateTime(o.ReturnDate), ReturnType: o.ReturnType || 'Trừ công nợ',
+      RefundMethod: o.RefundMethod || 'Đối trừ công nợ', Warehouse: o.Warehouse || '', Reason: o.Reason || '', Notes: o.Notes || ''
+    };
+    PRET.purchaseId = o.PurchaseID || '';
+    PRET.supplierId = o.SupplierID || '';
+    PRET.supplierName = o.SupplierName || '';
+    PRET.locked = !!o.PurchaseID;
+    PRET.items = (d.items || []).map(i => ({ ProductID: i.ProductID, Quantity: Number(i.Quantity) || 0, UnitCost: Number(i.UnitCost) || 0 }));
+    if (o.PurchaseID) await pretLoadRemain(o.PurchaseID, editId);
+  }
+
+  const title = editId ? ('Sửa phiếu trả NCC ' + editId) : 'Tạo phiếu trả hàng nhà cung cấp';
+  openModal(modalShell({
+    title: title, subtitle: 'Xuất kho trả lại nhà cung cấp, giảm công nợ hoặc nhận hoàn tiền', icon: 'assignment_return',
+    body: pretDatalist()
+      + '<div id="pretPurchaseWrap">' + field('Phiếu mua gốc (tuỳ chọn)', pretPurchasePicker(),
+        'Chọn phiếu mua để khóa nhà cung cấp và giới hạn số lượng còn được trả. Để trống nếu trả hàng ngoài phiếu.') + '</div>'
+      + '<div id="pretSupplierWrap">' + pretSupplierField() + '</div>'
+      + row2(field('Ngày trả', inp('pretDate', '', 'datetime-local', head.ReturnDate || localDateTime())),
+        whField('pretWarehouse', head.WarehouseID, 'Kho xuất trả', 'Bỏ trống thì lấy đúng kho đã nhập của phiếu mua gốc'))
+      + '<div class="mb-4"><div class="flex items-center justify-between mb-1.5"><label class="block text-[13px] font-medium text-ink">Hàng trả lại nhà cung cấp *</label>'
+      + '<span id="pretHint" class="text-[11px] text-muted"></span></div>'
+      + '<div id="pretLines"></div></div>'
+      + row2(field('Kiểu xử lý ' + infoTip('Trừ công nợ: giảm số tiền còn phải trả NCC (ưu tiên phiếu mua gốc).\nNhận hoàn tiền: NCC trả lại tiền, hệ thống ghi 1 phiếu thu.'),
+        sel('pretType', ['Trừ công nợ', 'Nhận hoàn tiền'], head.ReturnType).replace('<select', '<select onchange="pretTypeChanged()"')),
+        field('Hình thức xử lý tiền', sel('pretMethod', ['Đối trừ công nợ', 'Tiền mặt', 'Chuyển khoản'], head.RefundMethod)))
+      + row2(field('Lý do trả', inp('pretReason', 'VD: Hàng lỗi, sai quy cách', 'text', head.Reason)),
+        field('Ghi chú', inp('pretNotes', '', 'text', head.Notes)))
+      + '<div class="rounded-2xl bg-bg px-4 py-3"><div class="flex justify-between items-center"><span class="text-[13px] text-muted">Tổng giá trị trả</span>'
+      + '<span id="pretTotal" class="font-bold text-rose-600">0 đ</span></div>'
+      + '<div id="pretImpact" class="mt-2 text-[12px] text-muted"></div></div>',
+    footer: btnSecondary('Huỷ', 'closeModal()', 'close') + btnPrimary(editId ? 'Lưu thay đổi' : 'Tạo phiếu trả', 'pretSave()', 'save')
+  }), 720);
+  pretRenderLines();
+  pretTypeChanged();
+};
+V223_IMPL["pretPickPurchase__11728"] = async function(id) {
+  const panel = $('#pretPurchasePanel'); if (panel) panel.classList.add('hidden');
+  const po = (STATE.cache.purchases || []).find(p => p.PurchaseID === id) || {};
+  PRET.purchaseId = id; PRET.supplierId = po.SupplierID || ''; PRET.supplierName = po.SupplierName || ''; PRET.locked = true;
+  const s = $('#pretPurchaseSearch'); if (s) s.value = id + ' · ' + (po.SupplierName || '');
+  const hid = $('#pretPurchase'); if (hid) hid.value = id;
+  const wrap = $('#pretSupplierWrap'); if (wrap) wrap.innerHTML = pretSupplierField();
+  const ok = await pretLoadRemain(id, PRET.editId);
+  if (ok) {
+    PRET.items = Object.keys(PRET.remain).map(pid => {
+      const r = PRET.remain[pid];
+      return { ProductID: pid, Quantity: 0, UnitCost: Number(r.UnitCost) || 0 };
+    });
+  }
+  pretRenderLines();
+};
+V223_IMPL["pretLoadRemain__11751"] = async function(purchaseId, excludeId) {
+  const r = await gas('getPurchaseReturnableItems', purchaseId, excludeId || '');
+  if (!r.success) { toast(r.message, 'error'); return false; }
+  PRET.remain = {};
+  (r.data.items || []).forEach(i => { PRET.remain[i.ProductID] = i; });
+  return true;
+};
+V223_IMPL["pretSave__11837"] = async function() {
+  const items = PRET.items.filter(l => (Number(l.Quantity) || 0) > 0);
+  if (!items.length) return toast('Nhập số lượng cần trả cho ít nhất 1 sản phẩm', 'error');
+  const supplierId = (($('#pretSupplier') || {}).value) || PRET.supplierId;
+  const purchaseId = (($('#pretPurchase') || {}).value) || '';
+  if (!supplierId && !purchaseId) return toast('Chọn nhà cung cấp hoặc phiếu mua gốc', 'error');
+  // Kiểm tra ngay trên giao diện để không phải chờ server báo lỗi
+  for (const l of items) {
+    const p = pretProductById(l.ProductID);
+    const rem = PRET.remain[l.ProductID];
+    const maxQty = PRET.locked ? Number(rem && rem.RemainQty) || 0 : (pretIsService(p) ? Infinity : Number(p.CurrentStock) || 0);
+    if (Number(l.Quantity) > maxQty) {
+      return toast('"' + (p.ProductName || l.ProductID) + '" vượt mức cho phép (tối đa ' + fmtNum(maxQty) + ')', 'error');
+    }
+  }
+  const data = {
+    PurchaseID: purchaseId, SupplierID: supplierId, ReturnDate: $('#pretDate').value,
+    ReturnType: $('#pretType').value, RefundMethod: $('#pretMethod').value,
+    Warehouse: (typeof whName==='function' ? whName(whVal('pretWarehouse')) : $('#pretWarehouse').value), WarehouseID: whVal('pretWarehouse'), Reason: $('#pretReason').value, Notes: $('#pretNotes').value,
+    items: items.map(l => ({ ProductID: l.ProductID, Quantity: Number(l.Quantity), UnitCost: Number(l.UnitCost) }))
+  };
+  if (SAVING) return; setSaving(true);
+  toast(PRET.editId ? 'Đang lưu...' : 'Đang tạo phiếu...', 'info');
+  let r;
+  if (PRET.editId) r = await gas('updatePurchaseReturn', PRET.editId, data);
+  else {
+    r = await gas('createPurchaseReturn', data);
+  }
+  setSaving(false);
+  if (!r.success) return toast(r.message, 'error');
+  toast(r.message);
+  closeModal();
+  await reprime('purchaseReturns', 'purchases', 'suppliers', 'products', 'movements');
+  render();
+};
+V223_IMPL["viewPurchaseReturn__11874"] = async function(id) {
+  openModalLoading('Phiếu trả hàng NCC ' + id, 'assignment_return', 720);
+  const r = await detailGet('getPurchaseReturnDetail', id);
+  if (!r.success) { closeModal(); return toast(r.message, 'error'); }
+  const d = r.data, o = d.ret || {};
+  const total = Number(o.TotalAmount) || 0, refund = Number(o.RefundAmount) || 0;
+  const status = pretDisplayStatus(o);
+  const cancelled = isCancelled_(status);
+  const isRefundType = String(o.ReturnType || '') === 'Nhận hoàn tiền';
+  const lines = [['Kiểu xử lý', esc(o.ReturnType || ''), 'font-medium text-ink'], ['Tổng giá trị trả', pretMoney(total), 'font-bold text-rose-600']];
+  if (isRefundType) lines.push(['NCC đã hoàn', pretMoney(total - refund), 'text-emerald-600 font-semibold']);
+  else lines.push(['Đã trừ công nợ', pretMoney(Math.max(0, total - refund)), 'text-emerald-600 font-semibold']);
+  lines.push(['NCC còn phải hoàn', pretMoney(refund), refund > 0 ? 'text-amber-600 font-bold' : 'text-muted font-semibold']);
+  const refundAction = (!cancelled && refund > 0) ? btnPrimary('Ghi nhận NCC đã hoàn', "openPurchaseReturnRefundModal('" + id + "'," + refund + ")", 'payments') : '';
+  const printAction = '<button onclick="printPurchaseReturn(\'' + id + '\')" class="bg-white border border-stroke text-ink px-4 py-2.5 rounded-xl text-[13px] font-medium flex items-center gap-1.5 hover:bg-bg"><span class="ms text-[18px]">print</span>In phiếu</button>';
+  $('#modalBox').innerHTML = modalShell({
+    title: 'Phiếu trả hàng NCC ' + id, subtitle: o.SupplierName || '', icon: 'assignment_return',
+    body: '<div class="flex items-center justify-between text-[13px] mb-4 flex-wrap gap-2"><span class="text-muted">Ngày trả: <b class="text-ink">' + fmtDate(o.ReturnDate) + '</b> · Phiếu mua gốc: <b class="text-ink">' + esc(o.PurchaseID || '-') + '</b> · Kho: <b class="text-ink">' + esc(o.Warehouse || '-') + '</b></span>' + badge(status) + '</div>'
+      + (o.Reason ? '<div class="rounded-xl bg-bg px-4 py-2.5 mb-4 text-[13px]"><span class="text-muted">Lý do trả:</span> <b class="text-ink">' + esc(o.Reason) + '</b></div>' : '')
+      + detailItemsTable([{ label: 'Sản phẩm', key: 'ProductName' }, { label: 'SKU', key: 'SKU' }, { label: 'SL', right: true, key: 'Quantity' },
+      { label: 'Đơn giá', right: true, render: x => pretMoney(x.UnitCost) }, { label: 'Thành tiền', right: true, render: x => pretMoney(x.LineTotal) }], d.items || [])
+      + detailTotals(lines)
+      + paymentTimeline(d.payments || [], 'Lịch sử đối trừ / hoàn tiền'),
+    footer: btnSecondary('Đóng', 'closeModal()', 'close') + printAction + refundAction
+  });
+};
+V223_IMPL["doPurchaseReturnRefund__11937"] = async function(returnId) {
+  if (SAVING) return; setSaving(true);
+  const r = await gas('completePurchaseReturnRefund', returnId, $('#pretRefundMethod').value, $('#pretRefundNote').value, '');
+  setSaving(false);
+  if (!r.success) return toast(r.message, 'error');
+  toast(r.message); closeModal();
+  await reprime('purchaseReturns', 'purchases', 'suppliers');
+  render();
+};
+V223_IMPL["savePurchaseRequisitionForm__15151"] = async function(){
+  if(PR_BUSY||!PR_DRAFT)return;PR_BUSY=true;setSaving(true);
+  try{const payload={ClientRef:PR_DRAFT.ClientRef,Notes:amcvnVal('prNotes'),items:PR_DRAFT.items.map((x,i)=>({RequirementID:x.RequirementID,Quantity:Number(amcvnVal('prQty'+i)),InventoryMode:amcvnVal('prMode'+i)}))};
+    const r=await gas('createPurchaseRequisition',payload);if(!r||!r.success)throw new Error(r&&r.message||'Không tạo được đề nghị');
+    closeModal();toast(r.message);MATERIAL_DASH_CACHE=null;go('material_control','requests');
+  }catch(e){ console.warn('[savePurchaseRequisitionForm]', (e && e.message) || String(e)); toast(e.message,'error');}finally{PR_BUSY=false;setSaving(false);}
+};
+V223_IMPL["renderPurchaseRequisitions__15158"] = async function(){
+  const host=$('#tabBody');if(!host)return;host.innerHTML=loadingBlock();
+  const fn=STATE.route==='inventory'?'getWarehousePurchaseRequisitions':(STATE.route==='purchasing'?'getPurchaseRequisitions':'getMaterialPurchaseRequisitions'),scope=STATE.route==='material_control'?{machineId:APP_CONTEXT.machineId,projectId:APP_CONTEXT.projectId}:{},r=await gas(fn,scope);
+  if(!r||!r.success){host.innerHTML=emptyState(r&&r.message||'Không tải được đề nghị');return;}
+  PR_LIST=(r.data||[]).filter(x=>STATE.route==='material_control'||((!APP_CONTEXT.projectId||x.ProjectID===APP_CONTEXT.projectId)&&(!APP_CONTEXT.machineId||x.MachineID===APP_CONTEXT.machineId)));host.innerHTML=card(procTable([{label:'Mã đề nghị',key:'RequestID'},{label:'Ngày',render:x=>fmtDate(x.RequestDate)},
+    {label:'Nguồn',render:x=>badge(x.RequestType?'Ngoài BOM':'BOM / CTB')},{label:'Loại / Bộ phận',render:x=>esc((x.RequestType||'BOM')+(x.Department?' · '+x.Department:''))},
+    {label:'Mục đích',render:x=>esc(x.Purpose||x.Notes||'')},{label:'Số dòng',key:'TotalLines'},{label:'PO',render:x=>esc((x.PurchaseIDs||[]).join(', ')||x.PurchaseID||'')},
+    {label:'Trạng thái',render:x=>procStatus(x.Status)},{label:'Người đề nghị',key:'CreatedBy'},{label:'',render:x=>btnSecondary('Chi tiết','openPurchaseRequisition('+jsArg(x.RequestID)+')','list')}],PR_LIST,{empty:'Chưa có đề nghị mua hàng.'}));
+};
+V223_IMPL["cancelRequisitionUI__15185"] = async function(id){if(!(await appDecision_('Hủy đề nghị chưa đặt hàng này?')))return;const h=prFind(id),r=await gas(h&&h.RequestType?'cancelGeneralPurchaseRequisition':'cancelPurchaseRequisition',id);if(!r||!r.success)return toast(r&&r.message||'Không hủy được','error');closeModal();toast(r.message);renderPurchaseRequisitions();};
+V223_IMPL["openRequisitionPO__15186"] = async function(){toast('Chuyển sang Báo giá & Phiếu mua để lấy báo giá và trình duyệt.','info');};
+V223_IMPL["saveRequisitionPO__15187"] = async function(){return openRequisitionPO();};
+V223_IMPL["procCall__15221"] = async function(fn,...args){const r=await gas(fn,...args);if(!r||!r.success)throw new Error(r&&r.message||'Không thực hiện được thao tác');return r.data;};
+V223_IMPL["savePRReview__15227"] = async function(id,yes){return procWrite(async()=>{const h=prFind(id),d=await procCall(h&&h.RequestType?'reviewGeneralPurchaseRequisition':'reviewPurchaseRequisition',id,{Decision:yes?'APPROVE':'REJECT',Notes:amcvnVal('procReviewNote'),Currency:amcvnVal('procCurrency'),FXRate:amcvnVal('procRate')});closeModal();toast(yes?'Đã duyệt đề nghị':'Đã từ chối');await renderPurchaseRequisitions();});};
+V223_IMPL["goToRFQ__15228"] = async function(id){closeModal();STATE.route='purchasing';STATE.tab.purchasing='sourcing';await render();await openProcRFQ(id);};
+V223_IMPL["renderProcurement__15229"] = async function(){
+ const host=$('#tabBody');if(!host)return;host.innerHTML=loadingBlock();
+ try{PROCUREMENT=await procCall('getProcurementWorkspace');PROC_PENDING_POS=new Set();
+  const rfqs=procTable([{label:'RFQ',key:'RFQID'},{label:'Đề nghị',key:'RequestID'},{label:'Tiền tệ',key:'Currency',width:100},{label:'Trạng thái',render:x=>procStatus(x.Status),width:200},{label:'Ngày',render:x=>fmtDate(x.CreatedAt),width:130},{label:'',render:x=>btnSecondary('Báo giá / So sánh','openProcRFQ('+jsArg(x.RFQID)+')','compare_arrows'),width:220}],PROCUREMENT.rfqs);
+  const proposals=procTable([{label:'Chọn',width:70,render:x=>x.Status==='APPROVED'?'<input type="checkbox" class="proc-po-check" onchange="'+esc('this.checked?PROC_PENDING_POS.add('+jsArg(x.ProposalID)+'):PROC_PENDING_POS.delete('+jsArg(x.ProposalID)+')')+'">':''},{label:'Phiếu mua',key:'ProposalID'},{label:'RFQ',key:'RFQID'},{label:'Trạng thái',render:x=>procStatus(x.Status)},{label:'Người duyệt',key:'ReviewedBy'},{label:'PO',render:x=>procPOLinks(x.PurchaseIDs),width:280},{label:'',render:x=>btnSecondary('Chi tiết','openProcProposal('+jsArg(x.ProposalID)+')','list'),width:140}],PROCUREMENT.proposals);
+  host.innerHTML='<div class="proc-note">1. Duyệt đề nghị tại Material Control · 2. Lấy và so sánh báo giá · 3. Trình duyệt phiếu mua · 4. Nhóm PO theo NCC và dự án.</div><h3 class="font-bold mb-3">Yêu cầu báo giá</h3>'+rfqs+'<h3 class="font-bold mt-6 mb-3">Phiếu mua</h3><div class="proc-actions">'+(canAdd('purchasing')?btnPrimary('Tạo PO từ phiếu đã chọn','createProcPOs()','shopping_cart'):'')+'</div>'+proposals;
+ }catch(e){ console.warn('[renderProcurement]', (e && e.message) || String(e)); host.innerHTML=emptyState(e.message);}
+};
+V223_IMPL["openProcRFQ__15238"] = async function(id){
+ try{PROC_RFQ=await procCall('getProcurementRFQ',id);PROC_SELECTED={};PROC_REF='PP-'+Date.now()+'-'+Math.random().toString(36).slice(2);drawProcRFQ();}catch(e){ console.warn('[openProcRFQ]', (e && e.message) || String(e)); toast(e.message,'error');}
+};
+V223_IMPL["submitProcProposal__15256"] = async function(){return procWrite(async()=>{if(PROC_RFQ.lines.some(x=>!PROC_SELECTED[x.RFQLineID]))throw new Error('Chọn NCC cho đầy đủ các dòng.');const d=await procCall('createPurchaseProposal',PROC_RFQ.rfq.RFQID,{ClientRef:PROC_REF,selections:PROC_RFQ.lines.map(x=>({RFQLineID:x.RFQLineID,QuoteItemID:PROC_SELECTED[x.RFQLineID]})),Notes:amcvnVal('procSelectionNote')});closeModal();await renderProcurement();await openProcProposal(d.ProposalID);});};
+V223_IMPL["exportProcRFQ__15266"] = async function(id){try{const d=await procCall('getRFQExport',id);await napThuVien('xlsx');XLSX.writeFile(procRFQWorkbook(d),id+'-BaoGia.xlsx');}catch(e){ console.warn('[exportProcRFQ]', (e && e.message) || String(e)); toast(e.message,'error');}};
+V223_IMPL["previewProcImport__15277"] = async function(id){return procWrite(async()=>{const file=$('#procQuoteFile').files[0];if(!file)throw new Error('Chọn file báo giá.');if(file.size>8*1024*1024)throw new Error('File báo giá quá 8 MB.');const supplier=amcvnVal('procSupplier');if(!supplier)throw new Error('Chọn NCC.');await napThuVien('xlsx');const wb=XLSX.read(new Uint8Array(await file.arrayBuffer()),{type:'array',cellDates:true});
+ PROC_QUOTE={id,payload:{SupplierID:supplier,ClientRef:'BQ-'+Date.now()+'-'+Math.random().toString(36).slice(2),items:procParseQuoteWorkbook(wb,id)}};const d=await procCall('previewSupplierQuotation',id,PROC_QUOTE.payload);
+ $('#procQuotePreview').innerHTML='<div class="proc-note">'+esc(d.supplier.SupplierName)+' · '+d.items.length+' dòng báo giá · '+d.missingLines+' dòng chưa báo · Tổng phần đã báo: '+fmtNum(d.total)+' '+esc(d.rfq.Currency)+'</div>'+procTable([{label:'Mã hàng',key:'PartNumber'},{label:'SL',key:'Quantity',right:true},{label:'Đơn giá',key:'UnitCost',right:true},{label:'Leadtime',key:'LeadDays',right:true},{label:'Thanh toán',key:'PaymentTerms'},{label:'Hiệu lực',key:'ValidUntil'}],d.items)+btnPrimary('Xác nhận nhập báo giá','saveProcImport()','save');
+ });};
+V223_IMPL["saveProcImport__15281"] = async function(){return procWrite(async()=>{if(!PROC_QUOTE)throw new Error('Chưa có bản xem trước.');await procCall('importSupplierQuotation',PROC_QUOTE.id,PROC_QUOTE.payload);toast('Đã nhập báo giá');await openProcRFQ(PROC_QUOTE.id);});};
+V223_IMPL["openProcProposal__15282"] = async function(id){try{PROC_PROPOSAL=await procCall('getPurchaseProposal',id);const h=PROC_PROPOSAL.proposal,body='<div class="proc-note">'+procStatus(h.Status)+' · Tổng gồm VAT: '+fmtNum(h.TotalAmount)+' '+esc(h.Currency)+'<div>'+esc(h.SelectionNotes||'')+'</div><div>'+esc(h.ApprovalNotes||'')+'</div></div>'+procTable([{label:'Dự án',key:'ProjectCode'},{label:'Máy',key:'MachineCode'},{label:'Cụm',key:'ModuleCode'},{label:'Mã hàng',key:'PartNumber'},{label:'Vật tư',key:'ProductName'},{label:'NCC',key:'SupplierName',width:260},{label:'SL',key:'Quantity',right:true},{label:'Đơn giá',key:'UnitCost',right:true},{label:'VAT %',key:'VATPercent',right:true},{label:'Leadtime',key:'LeadDays',right:true},{label:'Thanh toán',key:'PaymentTerms',width:280}],PROC_PROPOSAL.items)+(['PENDING_APPROVAL','APPROVED'].includes(h.Status)?field('Ý kiến duyệt',txt('procApprovalNote','')):'');
+ let footer=btnSecondary('Đóng','closeModal()','close');if(h.Status==='PENDING_APPROVAL'&&canEdit('purchasing')&&canSee('approve_purchase'))footer+=btnSecondary('Từ chối','saveProcProposalReview('+jsArg(id)+',false)','close')+btnPrimary('Duyệt phiếu mua','saveProcProposalReview('+jsArg(id)+',true)','approval');
+ if(h.Status==='APPROVED'&&canEdit('purchasing')&&canSee('approve_purchase'))footer+=btnSecondary('Trả về báo giá','saveProcProposalReview('+jsArg(id)+',false)','undo');
+ openModal(modalShell({title:'Phiếu mua '+id,subtitle:'RFQ '+h.RFQID+' · Người lập '+h.CreatedBy,body,footer}),1240);
+ }catch(e){ console.warn('[openProcProposal]', (e && e.message) || String(e)); toast(e.message,'error');}};
+V223_IMPL["saveProcProposalReview__15287"] = async function(id,yes){return procWrite(async()=>{await procCall('reviewPurchaseProposal',id,{Decision:yes?'APPROVE':'REJECT',Notes:amcvnVal('procApprovalNote')});closeModal();toast(yes?'Phiếu mua đã duyệt':'Đã trả về bước báo giá');await renderProcurement();});};
+V223_IMPL["createProcPOs__15288"] = async function(){return procWrite(async()=>{const ids=Array.from(PROC_PENDING_POS);if(!ids.length)throw new Error('Tích chọn phiếu mua đã duyệt.');const d=await procCall('generateApprovedPOs',ids,{});await renderProcurement();openModal(modalShell({title:'PO đã tạo',body:'<p class="proc-note">Nhóm theo NCC và dự án; tách riêng khi khác tiền tệ, tỷ giá hoặc điều khoản thanh toán.</p>'+d.PurchaseIDs.map(id=>btnSecondary('Xem / In '+id,'printProcPO('+jsArg(id)+')','print')).join(''),footer:btnSecondary('Đóng','closeModal()','close')}),760);});};
+V223_IMPL["printProcPO__15292"] = async function(id){try{const d=await procCall('getProcurementPODocument',id),p=d.po,s=d.supplier,currency=p.Currency||'VND',foreign=currency!=='VND';let sub=0,vat=0;
+ const rows=d.items.map((x,i)=>{const cost=foreign?Number(x.OriginalUnitCost):Number(x.UnitCost),base=foreign?Math.round(Number(x.Quantity)*cost*100)/100:Number(x.LineTotal),tax=foreign?Math.round(base*Number(x.VATPercent||0))/100:Number(x.VATAmount||0);sub+=base;vat+=tax;
+ return '<tr><td>'+(i+1)+'</td><td>'+esc(x.ProductName)+'</td><td>'+esc(x.PartNumber||x.SKU)+'</td><td>'+esc(x.BrandMaterial||'')+'</td><td>'+esc(x.Unit||'')+'</td><td class="n">'+fmtNum(x.Quantity)+'</td><td>'+esc(x.ExpectedDate||'')+'</td><td class="n">'+fmtNum(cost)+'</td><td class="n">'+fmtNum(base)+'</td></tr>';}).join('');
+ const body='<h1>ĐƠN ĐẶT HÀNG / PURCHASE ORDER</h1><div class="parties"><div><p>1. Bên mua / Buyer:</p>'+procBuyer(d.settings)+'</div><div><p>2. Bên bán / Seller:</p><b>'+esc(s.SupplierName)+'</b><p>'+esc(s.Address||'')+'</p><p>MST: '+esc(s.TaxCode||'')+'</p><p>'+esc(s.ContactPerson||'')+' '+esc(s.Phone||'')+'</p>'+(s.BankAccount?'<p>STK: '+esc(s.BankAccount)+' · '+esc(s.BankName||'')+'</p>':'')+'</div></div><div class="meta"><b>'+esc(id)+'</b><span>Dự án: '+esc(d.project.ProjectCode||p.ProjectID||'')+'</span><span>Ngày đặt: '+fmtDate(p.PurchaseDate)+' · '+esc(currency)+'</span></div><table><colgroup><col style="width:4%"><col style="width:22%"><col style="width:20%"><col style="width:9%"><col style="width:5%"><col style="width:6%"><col style="width:10%"><col style="width:12%"><col style="width:12%"></colgroup><thead><tr><th>No</th><th>Tên chi tiết / Name</th><th>Code</th><th>Mat/Brand</th><th>Unit</th><th>Qty</th><th>Ngày nhận</th><th>Unit Price</th><th>Line total</th></tr></thead><tbody>'+rows+'</tbody></table><div class="terms n">Cộng trước VAT: '+fmtNum(sub)+' '+esc(currency)+'<br>VAT: '+fmtNum(vat)+'<br><b>Tổng: '+fmtNum(sub+vat)+' '+esc(currency)+'</b></div><div class="terms"><b>Ghi chú / Note:</b> Đơn giá và thành tiền từng dòng chưa gồm VAT.<br><b>Điều khoản thanh toán / Payment term:</b> '+esc(p.PaymentTerms||'Chưa có')+'<br>Yêu cầu: Hàng giao đúng chủng loại, quy cách hoặc bản vẽ của bên đặt hàng.</div><div class="sign"><div>Xác nhận của NCC / Supplier confirmation<br>(Ký, họ tên và đóng dấu)</div><div>Xác nhận bên đặt hàng<br>(Ký, họ tên và đóng dấu)</div></div>';
+ showProcPrint('PO '+id,procPrintShell('PO '+id,body));}catch(e){ console.warn('[printProcPO]', (e && e.message) || String(e)); toast(e.message,'error');}};
+V223_IMPL["printProcRequisition__15297"] = async function(id){try{const ph=prFind(id),d=await procCall(ph&&ph.RequestType?'getGeneralRequisitionDocument':'getRequisitionDocument',id),h=d.request;
+ const rows=d.items.map((x,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(x.ProductName)+'</td><td>'+esc(x.PartNumber||x.SKU)+'</td><td>'+esc(x.BrandMaterial||'')+'</td><td>'+esc(x.Unit||'')+'</td><td class="n">'+fmtNum(x.Quantity)+'</td><td>'+fmtDate(x.RequiredDate)+'</td><td>'+(/^https:\/\//i.test(x.ImageUrl||'')?'<img src="'+esc(x.ImageUrl)+'" alt="Sản phẩm">':'')+'</td><td>'+esc(x.TechnicalSpecifications||'')+'</td></tr>').join('');
+ const body='<h1>ĐỀ NGHỊ MUA HÀNG / PURCHASE REQUISITION</h1><div class="parties"><div>'+procBuyer(d.settings)+'</div><div>Người đề nghị: '+esc(h.CreatedBy)+'<p>Mã đề nghị: '+esc(id)+'</p><p>Ngày đề nghị: '+fmtDate(h.RequestDate)+'</p><p>Trạng thái: '+procStatus(h.Status)+'</p></div></div><p>Dự án: '+esc(Array.from(new Set(d.items.map(x=>x.ProjectCode))).join(', '))+'</p><table><colgroup><col style="width:4%"><col style="width:21%"><col style="width:20%"><col style="width:10%"><col style="width:5%"><col style="width:6%"><col style="width:9%"><col style="width:8%"><col style="width:17%"></colgroup><thead><tr><th>No</th><th>Tên chi tiết / Name</th><th>Code</th><th>Mat/Brand</th><th>Unit</th><th>Qty</th><th>ETA</th><th>Hình ảnh</th><th>Thông số kỹ thuật</th></tr></thead><tbody>'+rows+'</tbody></table><div class="terms">Ghi chú: '+esc(h.Notes||'')+'</div><div class="sign"><div>Người lập<br>'+esc(h.CreatedBy||'')+'</div><div>Người kiểm tra</div><div>Người duyệt<br>'+esc(h.ApprovedBy||'')+'<br>'+fmtDate(h.ApprovedAt)+'</div></div>';
+ showProcPrint('Đề nghị '+id,procPrintShell('Đề nghị '+id,body));}catch(e){ console.warn('[printProcRequisition]', (e && e.message) || String(e)); toast(e.message,'error');}};
+V223_IMPL["bomDoMerge__18722"] = async function() {
+  var selected = Object.keys(BOM_TREE_STATE.selectedModules || {}).filter(function (k) { return BOM_TREE_STATE.selectedModules[k]; });
+  if (selected.length < 2) return toast('Cần chọn ít nhất 2 cụm', 'error');
+
+  var targetRadio = document.querySelector('input[name="mergeTarget"]:checked');
+  var targetValue = targetRadio ? targetRadio.value : '__new__';
+
+  var target = {};
+  if (targetValue === '__new__') {
+    target.moduleCode = String((document.getElementById('mergeNewCode') || {}).value || '').trim();
+    target.moduleName = String((document.getElementById('mergeNewName') || {}).value || '').trim();
+    if (!target.moduleCode) return toast('Nhập mã cụm mới', 'error');
+    target.moduleId = '';
+    target.moduleDrawingNo = '';
+  } else {
+    // Chọn cụm có sẵn làm đích
+    var selectedModules = MACHINE_BOM_CACHE.tree.children.filter(function (c) { return c.id === targetValue; });
+    if (!selectedModules.length) return toast('Không tìm thấy cụm đích', 'error');
+    var mod = selectedModules[0];
+    target = {
+      moduleId: mod.moduleId || '',
+      moduleCode: mod.moduleCode,
+      moduleName: mod.moduleName,
+      moduleDrawingNo: mod.moduleDrawingNo || ''
+    };
+  }
+
+  setSaving(true);
+  try {
+    var r = await gas('mergeBOMModules', MACHINE_BOM_CACHE.selectedVersion.BOMVersionID, selected, target);
+    if (!r || !r.success) return toast(r && r.message || 'Lỗi gộp cụm', 'error');
+    toast(r.message);
+    closeModal();
+    BOM_TREE_STATE.selectedModules = {};
+    await openMachineBOM(MACHINE_BOM_CACHE.machine.MachineID, MACHINE_BOM_CACHE.selectedVersion.BOMVersionID);
+  } finally {
+    setSaving(false);
+  }
+};
+V223_IMPL["bomDoSplit__18814"] = async function(moduleId) {
+  var radio = document.querySelector('input[name="splitBy"]:checked');
+  if (!radio) return toast('Chọn tiêu chí tách', 'error');
+  var splitBy = radio.value;
+
+  setSaving(true);
+  try {
+    var r = await gas('splitBOMModule', MACHINE_BOM_CACHE.selectedVersion.BOMVersionID, moduleId, splitBy);
+    if (!r || !r.success) return toast(r && r.message || 'Lỗi tách cụm', 'error');
+    toast(r.message);
+    closeModal();
+    BOM_TREE_STATE.selectedModules = {};
+    await openMachineBOM(MACHINE_BOM_CACHE.machine.MachineID, MACHINE_BOM_CACHE.selectedVersion.BOMVersionID);
+  } finally {
+    setSaving(false);
+  }
+};
+V223_IMPL["bomDoBulkSetCritical__18889"] = async function(moduleId) {
+  var radio = document.querySelector('input[name="critLevel"]:checked');
+  if (!radio) return toast('Chọn mức độ', 'error');
+  setSaving(true);
+  try {
+    var r = await gas('bulkUpdateBOMByModule', MACHINE_BOM_CACHE.selectedVersion.BOMVersionID, moduleId, 'setCritical', { level: radio.value });
+    if (!r || !r.success) return toast(r && r.message || 'Lỗi', 'error');
+    toast(r.message);
+    closeModal();
+    await openMachineBOM(MACHINE_BOM_CACHE.machine.MachineID, MACHINE_BOM_CACHE.selectedVersion.BOMVersionID);
+  } finally {
+    setSaving(false);
+  }
+};
+V223_IMPL["bomDoBulkSetDRI__18904"] = async function(moduleId) {
+  var dri = String((document.getElementById('bulkDRIInput') || {}).value || '').trim();
+  setSaving(true);
+  try {
+    var action = dri ? 'setDRI' : 'clearDRI';
+    var r = await gas('bulkUpdateBOMByModule', MACHINE_BOM_CACHE.selectedVersion.BOMVersionID, moduleId, action, { dri: dri });
+    if (!r || !r.success) return toast(r && r.message || 'Lỗi', 'error');
+    toast(r.message);
+    closeModal();
+    await openMachineBOM(MACHINE_BOM_CACHE.machine.MachineID, MACHINE_BOM_CACHE.selectedVersion.BOMVersionID);
+  } finally {
+    setSaving(false);
+  }
+};
+V223_IMPL["bomDoDeleteModule__18941"] = async function(moduleId) {
+  setSaving(true);
+  try {
+    var r = await gas('bulkUpdateBOMByModule', MACHINE_BOM_CACHE.selectedVersion.BOMVersionID, moduleId, 'delete', {});
+    if (!r || !r.success) return toast(r && r.message || 'Lỗi', 'error');
+    toast(r.message);
+    closeModal();
+    BOM_TREE_STATE.selectedModules = {};
+    await openMachineBOM(MACHINE_BOM_CACHE.machine.MachineID, MACHINE_BOM_CACHE.selectedVersion.BOMVersionID);
+  } finally {
+    setSaving(false);
+  }
+};
+V223_IMPL["openGeneralPurchaseRequest__20756"] = async function(){try{const o=await phase1Options();await load('products','getProducts');LINE_PRICE_MODE='cost';LINE_STOCK_MODE='none';LINE_PICK_LOCKED=false;LINE_ITEMS=[];const body=row3(field('Loại đề nghị',sel('gprType',[{v:'GENERAL_MATERIAL',t:'Vật tư dùng chung'},{v:'CONSUMABLE',t:'Hàng tiêu hao'},{v:'TOOL',t:'Công cụ dụng cụ'},{v:'SERVICE',t:'Dịch vụ / khác'},{v:'PROJECT_EXTRA',t:'Cấp thêm cho dự án'}],'GENERAL_MATERIAL')),field('Bộ phận',inp('gprDept','VD: Sản xuất/Kỹ thuật')),field('Ngày cần',inp('gprDate','','date','')))+row2(field('Dự án (không bắt buộc)',sel('gprProject',p1ProjectOptions(o,true),APP_CONTEXT.projectId||'').replace('class=\"fld\"','class=\"fld\" onchange=\"p1DependentMachines(\'gprProject\',\'gprMachineHost\',\'gprMachine\',true)\"')),field('Máy (không bắt buộc)','<div id=\"gprMachineHost\">'+sel('gprMachine',p1MachineOptions(o,APP_CONTEXT.projectId,true),APP_CONTEXT.machineId||'')+'</div>'))+field('Mục đích sử dụng *',txt('gprPurpose','Mô tả nhu cầu mua'))+linePicker('Hàng hóa / dịch vụ cần mua')+field('Ghi chú',txt('gprNotes',''));openModal(modalShell({title:'Đề nghị mua độc lập',subtitle:'Không phụ thuộc BOM hoặc CTB',icon:'add_shopping_cart',body,footer:btnSecondary('Hủy','closeModal()','close')+btnPrimary('Tạo đề nghị','saveGeneralPurchaseRequest()','send')}),900);refreshLines();}catch(e){toast(e.message,'error');}};
+V223_IMPL["saveGeneralPurchaseRequest__20757"] = async function(){if(P1_BUSY)return;if(!LINE_ITEMS.length)return toast('Thêm ít nhất một dòng hàng','error');if(!amcvnVal('gprPurpose'))return toast('Nhập mục đích sử dụng','error');P1_BUSY=true;setSaving(true);try{const r=await gas('createGeneralPurchaseRequisition',{ClientRef:'GPR-'+Date.now()+'-'+Math.random().toString(36).slice(2),RequestType:amcvnVal('gprType'),Department:amcvnVal('gprDept'),RequiredDate:amcvnVal('gprDate'),ProjectID:amcvnVal('gprProject'),MachineID:amcvnVal('gprMachine'),Purpose:amcvnVal('gprPurpose'),Notes:amcvnVal('gprNotes'),items:LINE_ITEMS.map(x=>({ProductID:x.ProductID,Quantity:Number(x.Quantity),RequiredDate:amcvnVal('gprDate')}))});if(!r||!r.success)throw new Error(r&&r.message||'Không tạo được đề nghị');closeModal();toast(r.message);renderPurchaseRequisitions();}catch(e){toast(e.message,'error');}finally{P1_BUSY=false;setSaving(false);}};
+V223_IMPL["openBOMTasks__20763"] = async function(){const r=await gas('getBOMTasks',APP_CONTEXT.machineId?{machineId:APP_CONTEXT.machineId}:{});if(!r||!r.success)return toast(r&&r.message||'Không tải được task','error');const rows=r.data||[],body='<div class="flex justify-end mb-3">'+btnPrimary('Tạo task ECN','openBOMTaskForm()','add_task')+'</div>'+procTable([{label:'Task',key:'TaskID'},{label:'Dự án / Máy',render:x=>esc((x.ProjectCode||'')+' / '+(x.MachineCode||''))},{label:'Tiêu đề',key:'Title'},{label:'ECN',key:'ECNNo'},{label:'Phụ trách',key:'AssigneeName'},{label:'Hạn',render:x=>'<span class="'+(x.Overdue?'text-rose-600 font-bold':'')+'">'+esc(fmtDate(x.DueDate)||'-')+'</span>'},{label:'Tiến độ',render:x=>fmtNum(x.ProgressPercent)+'%'},{label:'Trạng thái',render:x=>badge(amcvnStatusLabel(x.Status))},{label:'',render:x=>btnSecondary('Sửa','openBOMTaskForm('+jsArg(x.TaskID)+')','edit')}],rows,{empty:'Chưa có task BOM/ECN.'});window.P1_BOM_TASKS=rows;openModal(modalShell({title:'Công việc BOM & ECN',body,footer:btnSecondary('Đóng','closeModal()','close')}),1150);};
+V223_IMPL["openBOMTaskForm__20764"] = async function(id){const o=await phase1Options(),x=(window.P1_BOM_TASKS||[]).find(t=>t.TaskID===id)||{},project=x.ProjectID||APP_CONTEXT.projectId||'',machine=x.MachineID||APP_CONTEXT.machineId||'';const body=row2(field('Dự án',sel('btProject',p1ProjectOptions(o,false),project).replace('class=\"fld\"','class=\"fld\" onchange=\"p1DependentMachines(\'btProject\',\'btMachineHost\',\'btMachine\',false)\"')),field('Máy *','<div id="btMachineHost">'+sel('btMachine',p1MachineOptions(o,project,false),machine)+'</div>'))+row2(field('Tiêu đề *',inp('btTitle','Nội dung cần cập nhật','text',x.Title)),field('Số ECN',inp('btECN','ECN-...','text',x.ECNNo)))+field('Mô tả yêu cầu',txt('btDesc','Nội dung từ khách hàng/team TQ',x.Description))+row2(field('Nguồn',sel('btSource',['EMAIL','CUSTOMER','CHINA_TEAM','INTERNAL'],x.SourceType||'EMAIL')),field('Link email/tài liệu',inp('btLink','https://...','url',x.SourceLink)))+row2(field('Người phụ trách',sel('btAssignee',p1EmployeeOptions(o,true),x.AssigneeEmployeeID||'')),field('Người kiểm tra',sel('btReviewer',p1EmployeeOptions(o,true),x.ReviewerEmployeeID||'')))+row3(field('Hạn hoàn thành',inp('btDue','','date',x.DueDate||'')),field('Tiến độ %',inp('btProgress','','number',x.ProgressPercent||0)),field('Trạng thái',sel('btStatus',['NEW','IN_PROGRESS','REVIEW','COMPLETED','CANCELLED'],x.Status||'NEW')))+field('Ghi chú',txt('btNotes','',x.Notes));openModal(modalShell({title:id?'Cập nhật task '+id:'Tạo task BOM/ECN',body,footer:btnSecondary('Hủy','openBOMTasks()','arrow_back')+btnPrimary('Lưu task','saveBOMTaskForm('+jsArg(id||'')+')','save')}),820);};
+V223_IMPL["saveBOMTaskForm__20765"] = async function(id){const o=PHASE1_OPTIONS||{},ae=(o.employees||[]).find(x=>x.EmployeeID===amcvnVal('btAssignee'))||{},re=(o.employees||[]).find(x=>x.EmployeeID===amcvnVal('btReviewer'))||{};const r=await gas('saveBOMTask',id,{MachineID:amcvnVal('btMachine'),ECNNo:amcvnVal('btECN'),Title:amcvnVal('btTitle'),Description:amcvnVal('btDesc'),SourceType:amcvnVal('btSource'),SourceLink:amcvnVal('btLink'),AssigneeEmployeeID:ae.EmployeeID||'',AssigneeName:ae.FullName||'',ReviewerEmployeeID:re.EmployeeID||'',ReviewerName:re.FullName||'',DueDate:amcvnVal('btDue'),ProgressPercent:amcvnVal('btProgress'),Status:amcvnVal('btStatus'),Notes:amcvnVal('btNotes')});if(!r||!r.success)return toast(r&&r.message||'Không lưu được task','error');toast(r.message);openBOMTasks();};
+V223_IMPL["openQuickBOMCreate__20766"] = async function(){const o=await phase1Options();const machines=p1MachineOptions(o,APP_CONTEXT.projectId,false);if(!machines.length)return toast('Chưa có máy để tạo BOM','error');const body=field('Chọn máy',sel('quickBomMachine',machines,APP_CONTEXT.machineId||machines[0].v))+'<p class="proc-note">Mở workspace của máy để tạo BOM trống, copy phiên bản trước hoặc nhập Excel.</p>';openModal(modalShell({title:'Tạo BOM mới',body,footer:btnSecondary('Hủy','closeModal()','close')+btnPrimary('Tiếp tục','quickBOMContinue()','arrow_forward')}),650);};
+V223_IMPL["openBOMImpact__20767"] = async function(){const d=MACHINE_BOM_CACHE||{},v=d.selectedVersion,others=(d.versions||[]).filter(x=>x.BOMVersionID!==v.BOMVersionID);if(!v||!others.length)return toast('Cần ít nhất hai phiên bản BOM','info');const from=v.BaseVersionID||others[0].BOMVersionID,r=await gas('getBOMECNImpact',d.machine.MachineID,from,v.BOMVersionID);if(!r||!r.success)return toast(r&&r.message||'Không phân tích được','error');const x=r.data||{},all=[].concat((x.added||[]).map(z=>Object.assign({Change:'THÊM'},z)),(x.updated||[]).map(z=>Object.assign({Change:'SỬA'},z)),(x.deleted||[]).map(z=>Object.assign({Change:'XÓA'},z)));const body=procTable([{label:'Thay đổi',key:'Change'},{label:'Mã hàng',render:z=>esc((z.line||{}).PartNumber||(z.line||{}).SKU||'')},{label:'Sản phẩm',render:z=>esc((z.line||{}).ProductName||'')},{label:'Nhu cầu',key:'requirements',right:true},{label:'Đề nghị',key:'purchaseRequests',right:true},{label:'PO',key:'purchaseOrders',right:true},{label:'Đã nhận',key:'received',right:true},{label:'Đã kit',key:'kitted',right:true}],all,{empty:'Hai phiên bản không có thay đổi.'});openModal(modalShell({title:'Ảnh hưởng BOM / ECN',subtitle:'Kiểm tra trước khi đồng bộ CTB',body,footer:btnSecondary('Đóng','closeModal()','close')}),1100);};
+V223_IMPL["openMaterialRequirementPicker__20865"] = async function(machineId){const o=await phase1Options(),machine=(o.machines||[]).find(x=>x.MachineID===machineId);if(!machine)return toast('Không tìm thấy máy','error');MR_PICK_SELECTED={};window.MR_PICK_MACHINE=machineId;const body='<div class="proc-note mb-3"><b>Chỉ dùng cho nhu cầu phát sinh ngoài BOM</b>: vật tư bổ sung, sửa đổi chưa kịp ECN hoặc yêu cầu hiện trường. Vật tư thuộc BOM phải sửa/phát hành BOM rồi đồng bộ CTB.</div><div class="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3"><input id="mrPickSearch" oninput="renderMRPicker()" class="fld" placeholder="Tìm SKU, mã hàng, tên vật tư..."><select id="mrPickClass" onchange="renderMRPicker()" class="fld"><option value="">Tất cả phân loại</option><option>CNC</option><option>KLT</option><option>STD</option><option value="OTHER">Khác</option></select></div><div id="mrPickList" class="border border-line rounded-xl max-h-[250px] overflow-auto"></div><h4 class="font-semibold text-[13px] mt-4 mb-2">Vật tư đã chọn</h4><div id="mrPickSelected"></div>';openModal(modalShell({title:'Nhu cầu vật tư ngoài BOM',subtitle:machine.MachineCode||'',icon:'playlist_add',body,footer:btnSecondary('Hủy','closeModal()','close')+btnPrimary('Thêm vào CTB','saveMaterialRequirementBatch()','save')}),1050);renderMRPicker();renderMRSelected();};
+V223_IMPL["saveMaterialRequirementBatch__20869"] = async function(){const a=Object.values(MR_PICK_SELECTED);if(!a.length)return toast('Chọn ít nhất một vật tư','error');const items=a.map((x,i)=>({ProductID:x.ProductID,RequiredQty:Number(amcvnVal('mrpQty'+i)),ModuleID:amcvnVal('mrpMod'+i),MaterialClass:amcvnVal('mrpClass'+i),CriticalLevel:amcvnVal('mrpCritical'+i),SourceType:amcvnVal('mrpSource'+i)}));setSaving(true);const r=await gas('createMaterialRequirementsBatch',{MachineID:window.MR_PICK_MACHINE,items});setSaving(false);if(!r||!r.success)return toast(r&&r.message||'Không thêm được vật tư','error');closeModal();toast(r.message);MATERIAL_DASH_CACHE=null;openMachineMaterials(window.MR_PICK_MACHINE);};
+V223_IMPL["openMaterialReservation__20870"] = async function(requirementId){openModalLoading('Giữ chỗ vật tư','lock',760);const r=await gas('getMaterialReservationOptions',requirementId);if(!r||!r.success){closeModal();return toast(r&&r.message||'Không tải được tồn kho','error');}const d=r.data||{},x=d.requirement||{},opts=(d.warehouses||[]).filter(w=>w.AvailableToReserve>0).map(w=>({v:w.WarehouseID,t:(w.WarehouseCode||w.WarehouseName)+' · tồn '+fmtNum(w.OnHand)+' · khả dụng '+fmtNum(w.AvailableToReserve)})),history=(d.reservations||[]).length?procTable([{label:'Kho',key:'WarehouseName'},{label:'SL',key:'Quantity',right:true},{label:'Người giữ',key:'ReservedBy'},{label:'Thời gian',render:z=>fmtDate(z.ReservedAt)},{label:'',render:z=>'<button onclick="cancelMaterialReservationUI('+esc(jsArg(z.ReservationID))+','+esc(jsArg(requirementId))+')" class="text-rose-600 text-[12px]">Hủy</button>'}],d.reservations):'<div class="text-[12px] text-muted">Chưa có giữ chỗ đang hoạt động.</div>',body='<div class="proc-note"><b>'+esc(x.SKU)+' — '+esc(x.ProductName)+'</b><div>Cần '+fmtNum(x.RequiredQty)+' · đã giữ '+fmtNum(x.ReservedQty||0)+'</div></div>'+row2(field('Kho giữ chỗ *',sel('rsvWarehouse',opts,'')),field('Số lượng *',inp('rsvQty','0','number',Math.max(0,Number(x.RequiredQty||0)-Number(x.ReservedQty||0)))))+field('Ghi chú',inp('rsvNotes','Mục đích / ưu tiên'))+'<h4 class="font-semibold text-[13px] mt-4 mb-2">Đang giữ chỗ</h4>'+history;closeModal();openModal(modalShell({title:'Giữ chỗ vật tư',subtitle:'Chưa trừ tồn cho tới khi release kit',icon:'lock',body,footer:btnSecondary('Đóng','closeModal()','close')+(opts.length?btnPrimary('Xác nhận giữ','saveMaterialReservation('+esc(jsArg(requirementId))+')','lock'):'')}),760);};
+V223_IMPL["saveMaterialReservation__20871"] = async function(id){const r=await gas('reserveMaterialRequirement',{RequirementID:id,WarehouseID:amcvnVal('rsvWarehouse'),Quantity:amcvnVal('rsvQty'),Notes:amcvnVal('rsvNotes')});if(!r||!r.success)return toast(r&&r.message||'Không giữ chỗ được','error');closeModal();toast(r.message);MATERIAL_DASH_CACHE=null;const d=await gas('getMaterialRequirementDetail',id);openMachineMaterials(d.data.requirement.MachineID);};
+V223_IMPL["cancelMaterialReservationUI__20872"] = async function(rid,reqId){const r=await gas('cancelMaterialReservation',rid,'Hủy từ Material CTB');if(!r||!r.success)return toast(r&&r.message||'Không hủy được','error');toast(r.message);closeModal();MATERIAL_DASH_CACHE=null;const d=await gas('getMaterialRequirementDetail',reqId);openMachineMaterials(d.data.requirement.MachineID);};
+V223_IMPL["renderMaterialControlTab__20931"] = async function(tab){if(tab==='requests')return renderPurchaseRequisitions();const body=$('#tabBody');if(!body)return;body.innerHTML=loadingBlock();try{const d=await loadMaterialDashboard(true),k=d.kpi||{},match=x=>(!APP_CONTEXT.projectId||x.ProjectID===APP_CONTEXT.projectId)&&(!APP_CONTEXT.machineId||x.MachineID===APP_CONTEXT.machineId),kpis='<div class="grid grid-cols-2 xl:grid-cols-5 gap-3 mb-3">'+kpiCard('BOM lines',fmtNum(k.totalLines||0),'format_list_numbered','bg-blue-50 text-blue-600')+kpiCard('Ready',fmtNum(k.readyLines||0),'check_circle','bg-emerald-50 text-emerald-600')+kpiCard('In transit',fmtNum(k.inTransitLines||0),'local_shipping','bg-cyan-50 text-cyan-600')+kpiCard('Shortage',fmtNum(k.shortageLines||0),'warning','bg-amber-50 text-amber-600')+kpiCard('Critical A',fmtNum(k.criticalShortage||0),'report','bg-rose-50 text-rose-600')+'</div>';if(tab==='shortage')return renderMaterialShortages(body,kpis,(d.shortages||[]).filter(match));if(tab==='exceptions'){const rows=(d.exceptions||[]).filter(match),cols=[{label:'Risk',render:x=>materialCriticalBadge(x.RiskLevel==='HIGH'?'A':x.RiskLevel==='MEDIUM'?'B':'C')},{label:'Dự án / Máy',render:x=>'<b>'+esc(x.ProjectCode||'-')+'</b><div class="proc-sub">'+esc(x.MachineCode||'-')+'</div>'},{label:'Loại / Mô tả',render:x=>badge(amcvnStatusLabel(x.ExceptionType))+'<div class="proc-text mt-1">'+esc(x.Description||'')+'</div>'},{label:'Owner / Hạn',render:x=>'<b>'+esc(x.Owner||'-')+'</b><div class="proc-sub">'+esc(fmtDate(x.DueDate)||'-')+'</div>'},{label:'Trạng thái',render:x=>badge(amcvnStatusLabel(x.Status))},{label:'',render:x=>canEdit('material_control')?'<button onclick="event.stopPropagation();openMaterialExceptionForm('+jsArg(x.MachineID)+','+jsArg(x.ExceptionID)+')" class="text-brand-600"><span class="ms">edit</span></button>':''}];body.innerHTML=kpis+materialCompactTable('materialExceptionsV204',rows,cols,{search:['ProjectCode','MachineCode','ExceptionType','Description','Owner','Action'],searchPlaceholder:'Tìm máy, loại ngoại lệ, mô tả hoặc owner...',selects:[{field:'RiskLevel',label:'Rủi ro'},{field:'Status',label:'Trạng thái'},{field:'Owner',label:'Owner'}],dateField:'DueDate',empty:'Không có ngoại lệ vật tư đang mở.'});return;}const rows=(d.machines||[]).filter(match),cols=[{label:'Dự án / Máy',render:x=>'<b>'+esc(x.ProjectCode||'-')+'</b><div class="proc-sub">'+esc(x.MachineCode||'-')+'</div>'},{label:'CTB',render:x=>'<b>'+Math.round(Number(x.CTBPercent)||0)+'%</b><div class="mt-1">'+materialCTBBadge(x.CTBStatus)+'</div>'},{label:'Ready',render:x=>fmtNum(x.ReadyLines||0)+' / '+fmtNum(x.TotalLines||0)},{label:'Thiếu',right:true,render:x=>'<b class="'+(x.ShortageLines?'text-amber-600':'text-emerald-600')+'">'+fmtNum(x.ShortageLines||0)+'</b>'},{label:'Critical A',right:true,key:'CriticalShortage'},{label:'FAT kế hoạch',render:x=>fmtDate(x.PlanFATDate)||'-'},{label:'Owner',key:'Owner'}];body.innerHTML=kpis+materialCompactTable('materialMachinesV204',rows,cols,{search:['ProjectCode','ProjectName','MachineCode','MachineName','Owner'],searchPlaceholder:'Tìm dự án, máy hoặc owner...',selects:[{field:'CTBStatus',label:'Trạng thái CTB'},{field:'ProjectCode',label:'Dự án'},{field:'Owner',label:'Owner'}],dateField:'PlanFATDate',idKey:'MachineID',onRowClick:'openMachineMaterials',empty:'Chưa có máy để tính CTB.'});}catch(e){body.innerHTML=emptyState(e.message);}};
+V223_IMPL["renderMaterialControlTab__21035"] = async function(tab){
+  if(tab==='requests')return renderPurchaseRequisitions();
+  const body=$('#tabBody');if(!body)return;body.innerHTML=loadingBlock();
+  try{
+    const d=await loadMaterialDashboard(true);MATERIAL_V205_DATA=d;
+    const k=d.kpi||{},match=x=>(!APP_CONTEXT.projectId||x.ProjectID===APP_CONTEXT.projectId)&&(!APP_CONTEXT.machineId||x.MachineID===APP_CONTEXT.machineId);
+    if(tab==='shortage')return renderMaterialShortages(body,'',(d.shortages||[]).filter(match));
+    if(tab==='exceptions'){
+      const rows=(d.exceptions||[]).filter(match),cols=[{label:'Risk',render:x=>materialCriticalBadge(x.RiskLevel==='HIGH'?'A':x.RiskLevel==='MEDIUM'?'B':'C')},{label:'Dự án / Máy',render:x=>'<b>'+esc(x.ProjectCode||'-')+'</b><div class="proc-sub">'+esc(x.MachineCode||'-')+'</div>'},{label:'Loại / Mô tả',render:x=>badge(amcvnStatusLabel(x.ExceptionType))+'<div class="proc-text mt-1">'+esc(x.Description||'')+'</div>'},{label:'Owner / Hạn',render:x=>'<b>'+esc(x.Owner||'-')+'</b><div class="proc-sub">'+esc(fmtDate(x.DueDate)||'-')+'</div>'},{label:'Trạng thái',render:x=>badge(amcvnStatusLabel(x.Status))},{label:'',render:x=>canEdit('material_control')?'<button onclick="event.stopPropagation();openMaterialExceptionForm('+esc(jsArg(x.MachineID))+','+esc(jsArg(x.ExceptionID))+')" class="text-brand-600"><span class="ms">edit</span></button>':''}];
+      body.innerHTML=materialCompactTable('materialExceptionsV205',rows,cols,{search:['ProjectCode','MachineCode','ExceptionType','Description','Owner'],searchPlaceholder:'Tìm máy, ngoại lệ hoặc owner...',selects:[{field:'RiskLevel',label:'Rủi ro'},{field:'Status',label:'Trạng thái'}],empty:'Không có ngoại lệ vật tư đang mở.'});return;
+    }
+    const metrics='<div class="grid grid-cols-2 xl:grid-cols-5 gap-2 mb-3">'+v205MetricCard('ALL','BOM/CTB lines',k.totalLines,'format_list_numbered','bg-blue-50 text-blue-600')+v205MetricCard('READY','Ready',k.readyLines,'check_circle','bg-emerald-50 text-emerald-600')+v205MetricCard('IN_TRANSIT','In transit',k.inTransitLines,'local_shipping','bg-cyan-50 text-cyan-600')+v205MetricCard('SHORTAGE','Shortage',k.shortageLines,'warning','bg-amber-50 text-amber-600')+v205MetricCard('CRITICAL','Critical A',k.criticalShortage,'report','bg-rose-50 text-rose-600')+'</div>';
+    const rows=(d.machines||[]).filter(match),cols=[{label:'Dự án / Máy',render:x=>'<b>'+esc(x.ProjectCode||'-')+'</b><div class="proc-sub">'+esc(x.MachineCode||'-')+'</div>'},{label:'CTB',render:x=>'<b>'+Math.round(Number(x.CTBPercent)||0)+'%</b><div class="mt-1">'+materialCTBBadge(x.CTBStatus)+'</div>'},{label:'Ready',render:x=>fmtNum(x.ReadyLines||0)+' / '+fmtNum(x.TotalLines||0)},{label:'Thiếu',right:true,render:x=>'<b class="'+(x.ShortageLines?'text-amber-600':'text-emerald-600')+'">'+fmtNum(x.ShortageLines||0)+'</b>'},{label:'Critical A',right:true,key:'CriticalShortage'},{label:'FAT kế hoạch',render:x=>fmtDate(x.PlanFATDate)||'-'},{label:'Owner',key:'Owner'}];
+    body.innerHTML=metrics+materialCompactTable('materialMachinesV205',rows,cols,{search:['ProjectCode','MachineCode','Owner'],searchPlaceholder:'Tìm dự án, máy hoặc owner...',selects:[{field:'CTBStatus',label:'Trạng thái CTB'},{field:'ProjectCode',label:'Dự án'}],idKey:'MachineID',onRowClick:'openMachineMaterials',empty:'Chưa có máy để tính CTB.'});
+  }catch(e){body.innerHTML=emptyState(e.message);}
+};
+V223_IMPL["bomAssignMove__21195"] = async function(ids,target){
+  const d=MACHINE_BOM_CACHE||{},v=d.selectedVersion;if(!v)return;setSaving(true);
+  try{const r=await gas('moveMachineBOMLines',v.BOMVersionID,ids,target||'');if(!r||!r.success)return toast(r&&r.message||'Không chuyển được vật tư','error');const fresh=await gas('getMachineBOMTree',d.machine.MachineID,v.BOMVersionID);if(!fresh||!fresh.success)throw new Error(fresh&&fresh.message||'Không tải lại được BOM');const x=fresh.data||{};d.machine=x.machine||d.machine;d.project=x.project||d.project;d.versions=x.versions||d.versions;d.selectedVersion=x.selectedVersion||d.selectedVersion;d.lines=x.lines||[];d.tree=x.tree||null;d.totals=x.totals||{};BOM_ASSIGN_SELECTED.clear();renderMachineBOM(d);bomAssignmentRender();toast(r.message);}catch(e){toast(e.message,'error');}finally{setSaving(false);}
+};
+V223_IMPL["bomQuickCheck__21237"] = async function(){
+  const rows=bomQuickCollect(),d=MACHINE_BOM_CACHE||{},v=d.selectedVersion;if(!rows.length)return toast('Dán ít nhất một dòng vật tư','error');
+  const bad=rows.filter(x=>!x.ProductName||!x.PartNumber||!Number.isFinite(x.QtyPerMachine)||x.QtyPerMachine<=0);if(bad.length)return toast('Có '+bad.length+' dòng thiếu mã, tên hoặc số lượng','error');setSaving(true);
+  try{const r=await gas('previewMachineBOMImport',v.BOMVersionID,rows,{machineId:d.machine.MachineID,versionNo:v.VersionNo,createMissingProducts:true});if(!r||!r.success)throw new Error(r&&r.message||'Không kiểm tra được dữ liệu');BOM_QUICK_PREVIEW={rows:rows,result:r.data};bomQuickRenderPreview();}catch(e){toast(e.message,'error');}finally{setSaving(false);}
+};
+V223_IMPL["bomQuickUploadOne__21248"] = async function(row,index,machineCode){const img=BOM_QUICK_IMAGES[index];if(!img)return'';const data=await bomQuickFileData(img.file),r=await gas('uploadBOMQuickImage',{data:data,mimeType:img.file.type,name:img.file.name||('bom_'+(index+1)+'.png')},machineCode);if(!r||!r.success)throw new Error(r&&r.message||'Không tải được ảnh dòng '+(index+1));row.ImageUrl=r.data.url;return r.data.url;};
+V223_IMPL["bomQuickImport__21249"] = async function(){
+  const p=BOM_QUICK_PREVIEW,d=MACHINE_BOM_CACHE||{},v=d.selectedVersion;if(!p||!v)return;if(BOM_QUICK_DUP_ROWS.length&&!($('#bomQuickAllowDup')||{}).checked)return toast('Xác nhận các dòng trùng trong bảng nhập nhanh','error');setSaving(true);
+  try{const addRows={};(p.result.details||[]).forEach(x=>{if(x.status==='ADD')addRows[Number(x.row)]=true;});const jobs=p.rows.map((row,i)=>({row,i,source:Number(row.sourceRow)})).filter(x=>BOM_QUICK_IMAGES[x.source-1]&&addRows[x.source]);for(let k=0;k<jobs.length;k+=3){toast('Đang tải ảnh '+Math.min(k+1,jobs.length)+'-'+Math.min(k+3,jobs.length)+' / '+jobs.length,'info');await Promise.all(jobs.slice(k,k+3).map(x=>bomQuickUploadOne(x.row,x.source-1,d.machine.MachineCode)));}const r=await gas('importMachineBOMLines',v.BOMVersionID,p.rows,{machineId:d.machine.MachineID,versionNo:v.VersionNo,createMissingProducts:true});if(!r||!r.success)throw new Error(r&&r.message||'Không nhập được BOM');const x=r.data||{};closeModal();toast(r.message);invalidate('products','projects');await openMachineBOM(d.machine.MachineID,x.BOMVersionID||v.BOMVersionID);openModal(modalShell({title:'Đã nhập nhanh BOM',icon:'task_alt',body:'<p>Đã thêm <b>'+fmtNum(x.imported||0)+'</b> dòng, tạo <b>'+fmtNum(x.createdProducts||0)+'</b> mã hàng, tạo <b>'+fmtNum(x.createdModules||0)+'</b> cụm và giữ nguyên <b>'+fmtNum(x.duplicateLines||0)+'</b> dòng đã có.</p>',footer:btnPrimary('Đóng','closeModal()','check')}),700);BOM_QUICK_PREVIEW=null;}catch(e){toast(e.message,'error');}finally{setSaving(false);}
+};
+V223_IMPL["renderPurchasingTab__21273"] = async function(tab){if(tab==='subcontract')return renderSubcontractV207();return renderPurchasingTabV207Base(tab);};
+V223_IMPL["renderSubcontractV207__21290"] = async function(){const body=$('#tabBody');body.innerHTML=loadingBlock();const r=await gas('getSubcontractWorkspace');if(!r||!r.success){body.innerHTML=emptyState(r&&r.message);return;}const d=OPS_SUB=r.data||{},s=d.summary||{},mm={};(d.refs.machines||[]).forEach(x=>mm[x.MachineID]=x);const cols=[{label:'Phiếu',render:x=>'<b>'+esc(x.SubcontractID)+'</b><div class="text-[11px] text-muted">'+esc(x.DrawingNo||'')+'</div>'},{label:'Máy',render:x=>esc((mm[x.MachineID]||{}).MachineCode||x.MachineID)},{label:'NCC',key:'SupplierName'},{label:'Công đoạn',key:'ProcessType'},{label:'Nội dung',key:'Description'},{label:'SL gửi / đạt',render:x=>fmtNum(x.Quantity)+' / '+fmtNum(x.PassedQty)},{label:'Ngày hẹn',render:x=>'<span class="'+(x.DueDate&&new Date(x.DueDate)<new Date()&&!['COMPLETED','CANCELLED'].includes(x.Status)?'text-rose-600 font-bold':'')+'">'+(fmtDate(x.DueDate)||'-')+'</span>'},{label:'Tiến độ',render:x=>'<b>'+fmtNum(x.ProgressPercent)+'%</b>'},{label:'Trạng thái',render:x=>opsStatusPill(x.Status)},{label:'',render:x=>'<div class="flex gap-2"><button title="Portal NCC" class="text-blue-600" onclick="copySubcontractPortalV207('+esc(jsArg(x.PortalToken))+')"><span class="ms">link</span></button><button title="In tem" class="text-slate-600" onclick="printSubcontractLabelV207('+esc(jsArg(x.SubcontractID))+')"><span class="ms">print</span></button><button class="text-brand-600" onclick="openSubcontractV207('+esc(jsArg(x.SubcontractID))+')"><span class="ms">edit</span></button></div>'}];body.innerHTML='<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-3">'+kpiCard('Tổng phiếu',s.total||0,'factory','bg-blue-50 text-blue-600')+kpiCard('Đang gia công',s.inProgress||0,'precision_manufacturing','bg-violet-50 text-violet-600')+kpiCard('Trễ hẹn',s.late||0,'schedule','bg-rose-50 text-rose-600')+kpiCard('Chờ IQC',s.waitingIQC||0,'fact_check','bg-amber-50 text-amber-600')+'</div>'+materialCompactTable('subcontractV207',d.orders||[],cols,{search:['SubcontractID','DrawingNo','Description','SupplierName','ProcessType'],searchPlaceholder:'Tìm phiếu, drawing, NCC, công đoạn...',selects:[{field:'SupplierName',label:'NCC'},{field:'ProcessType',label:'Công đoạn'},{field:'Status',label:'Trạng thái'},{field:'MachineID',label:'Máy'}],dateField:'DueDate',action:btnPrimary('Tạo phiếu gia công','openSubcontractV207()','add_business'),empty:'Chưa có phiếu gia công ngoài.'});};
+V223_IMPL["saveSubcontractV207__21292"] = async function(id){const r=await gas('saveSubcontractOrder',id,{MachineID:amcvnVal('subMachine'),SupplierID:amcvnVal('subSupplier'),ProcessType:amcvnVal('subProcess'),DrawingNo:amcvnVal('subDrawing'),Description:amcvnVal('subDesc'),Quantity:amcvnVal('subQty'),Unit:amcvnVal('subUnit'),SentDate:amcvnVal('subSent'),DueDate:amcvnVal('subDue'),ReceivedQty:amcvnVal('subReceived'),PassedQty:amcvnVal('subPassed'),RejectedQty:amcvnVal('subRejected'),Status:amcvnVal('subStatus'),ProgressPercent:amcvnVal('subPct'),Notes:amcvnVal('subNotes')});if(!r||!r.success)return toast(r&&r.message||'Không lưu được','error');closeModal();toast(r.message);renderSubcontractV207();};
+V223_IMPL["saveModule__21334"] = async function(machineId,moduleId){if(!BOM_MODULE_RETURN_V208)return saveModuleV208Base(machineId,moduleId);const data={MachineID:machineId,ModuleCode:amcvnVal('modCode'),ModuleName:amcvnVal('modName'),ModuleType:amcvnVal('modType'),Owner:amcvnVal('modOwner'),PlanStart:amcvnVal('modStart'),PlanFinish:amcvnVal('modFinish'),ProgressPercent:amcvnVal('modProgress'),MaterialStatus:amcvnVal('modMaterial'),AssemblyStatus:amcvnVal('modAssembly'),Notes:amcvnVal('modNotes')};const r=moduleId?await gas('updateBOMMachineModule',moduleId,data):await gas('createBOMMachineModule',data);if(!r||!r.success)return toast(r&&r.message||'Không lưu được module','error');const back=BOM_MODULE_RETURN_V208;BOM_MODULE_RETURN_V208=null;toast(r.message);closeModal();delete STATE.cache.projects;await openMachineBOM(back.machineId,back.versionId);};
+V223_IMPL["openBOMDocumentsV208__21336"] = async function(){const d=MACHINE_BOM_CACHE||{},mid=d.machine&&d.machine.MachineID;if(!mid)return;openModalLoading('Tài liệu kỹ thuật','folder_open',1120);const r=await gas('getEngineeringDocuments',{machineId:mid});if(!r||!r.success){closeModal();return toast(r&&r.message||'Không tải được tài liệu','error');}OPS_DOCS=r.data||{};OPS_DOC_RETURN_MACHINE_V208=mid;const rows=OPS_DOCS.rows||[],cols=[{label:'Loại',key:'DocumentType'},{label:'Số tài liệu',render:x=>'<b>'+esc(x.DocumentNo)+'</b>'},{label:'Tên tài liệu',key:'Title'},{label:'Revision',render:x=>'<b>'+esc(x.Revision)+'</b>'},{label:'BOM / ECN',render:x=>esc((x.BOMVersionID||'-')+' / '+(x.ECNNo||'-'))},{label:'Owner',key:'Owner'},{label:'Trạng thái',render:x=>opsStatusPill(x.Status)},{label:'',render:x=>'<div class="flex gap-2">'+(x.DriveUrl?'<a target="_blank" href="'+esc(x.DriveUrl)+'" class="text-blue-600"><span class="ms">open_in_new</span></a>':'')+(canEdit('bom')?'<button onclick="openDocumentV207('+esc(jsArg(x.DocumentID))+')" class="text-brand-600"><span class="ms">edit</span></button>':'')+'</div>'}];const body='<div class="proc-note mb-3">'+esc(i18nNow('Tài liệu được kỹ thuật phát hành theo máy/BOM/ECN. Sản xuất mở trực tiếp revision đã phát hành tại đây.'))+'</div>'+materialCompactTable('bomDocumentsV208',rows,cols,{search:['DocumentNo','Title','Revision','ECNNo','Owner'],searchPlaceholder:'Tìm tài liệu, revision, ECN...',selects:[{field:'DocumentType',label:'Loại tài liệu'},{field:'Status',label:'Trạng thái'}],action:canAdd('bom')?btnPrimary('Thêm tài liệu','openDocumentV207()','note_add'):'',empty:'Chưa có tài liệu kỹ thuật.'});closeModal();openModal(modalShell({title:'Tài liệu kỹ thuật · '+(d.machine.MachineCode||''),subtitle:(d.selectedVersion?'BOM '+d.selectedVersion.VersionNo:'')+' · '+rows.length+' tài liệu',icon:'folder_open',body,footer:btnSecondary('Đóng','closeBOMDocumentsV208()','close')}),1120);i18nApply($('#modalBox'));};
+V223_IMPL["renderBOMManagement__21405"] = async function(p){await renderBOMManagementV209Base(p);injectDepartmentStripV209('bom');};
+V223_IMPL["renderPurchasingTab__21409"] = async function(tab){if(tab==='payments')return renderPaymentsV209();return renderPurchasingTabV209Base(tab);};
+V223_IMPL["renderPaymentsV209__21410"] = async function(){
+  const body=$('#tabBody');body.innerHTML=loadingBlock();const r=await gas('getPaymentRequestWorkspace');if(!r||!r.success){body.innerHTML=emptyState(r&&r.message);return;}const d=PAYMENT_V209=r.data||{},s=d.summary||{};
+  const cols=[{label:'Code thanh toán',render:x=>'<b>'+esc(x.PaymentCode||x.PaymentRequestID)+'</b>'},{label:'Loại',render:x=>paymentTypeLabelV209(x.PaymentType)},{label:'Hợp đồng / PO',render:x=>esc(x.ContractPONo||x.PurchaseID||'-')},{label:'Dự án / Máy',render:x=>esc((x.ProjectCode||'-')+(x.MachineCode?' · '+x.MachineCode:''))},{label:'Nhà cung cấp',key:'SupplierName'},{label:'Số tiền',right:true,render:x=>'<b>'+fmtNum(x.Amount)+' '+esc(x.Currency||'VND')+'</b>'},{label:'Hạn thanh toán',render:x=>fmtDate(x.DueDate)},{label:'Người đề nghị',key:'RequestedBy'},{label:'Hồ sơ',render:x=>'<b>'+fmtNum((x.Documents||[]).length)+'</b> file/link'},{label:'Trạng thái',render:x=>badge(amcvnStatusLabel(x.Status))},{label:'',render:x=>paymentActionsV209(x)}];
+  body.innerHTML='<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-3">'+kpiCard('Chờ duyệt',s.pending||0,'pending_actions','bg-amber-50 text-amber-600')+kpiCard('Đã duyệt',s.approved||0,'verified','bg-blue-50 text-blue-600')+kpiCard('Đã thanh toán',s.paid||0,'payments','bg-emerald-50 text-emerald-600')+kpiCard('Giá trị chờ duyệt',fmtNum(s.amountPending||0),'account_balance_wallet','bg-violet-50 text-violet-600')+'</div>'+materialCompactTable('paymentsV209',d.rows||[],cols,{search:['PaymentRequestID','PurchaseID','SupplierName','ProjectCode','MachineCode'],searchPlaceholder:'Tìm đề nghị, PO, NCC, dự án...',selects:[{field:'Status',label:'Trạng thái'}],action:canAdd('purchasing')?btnPrimary('Tạo đề nghị thanh toán','openPaymentV209()','payments'):'',empty:'Chưa có đề nghị thanh toán.'});
+};
+V223_IMPL["savePaymentV209__21425"] = async function(){setSaving(true);try{const r=await gas('savePaymentRequest','',{PaymentType:amcvnVal('payReqType'),PurchaseID:amcvnVal('payReqPO'),ProjectID:amcvnVal('payReqProject'),MachineID:amcvnVal('payReqMachine'),SupplierID:amcvnVal('payReqSupplier'),ContractPONo:amcvnVal('payReqContract'),InvoiceNo:amcvnVal('payReqInvoice'),InvoiceDate:amcvnVal('payReqInvoiceDate'),Amount:amcvnVal('payReqAmount'),Currency:amcvnVal('payReqCurrency'),RequestDate:amcvnVal('payReqDate'),DueDate:amcvnVal('payReqDue'),Purpose:amcvnVal('payReqPurpose'),PurposeCode:amcvnVal('payReqPurposeCode'),PaymentDocumentMethod:amcvnVal('payReqDocMethod'),AccumulatedPaid:amcvnVal('payReqAccumulated'),RemainingContractAmount:amcvnVal('payReqRemaining'),NextPaymentAmount:amcvnVal('payReqNextAmount'),NextPaymentWeek:amcvnVal('payReqNextWeek'),Remarks:amcvnVal('payReqRemarks'),Documents:paymentDocsV209()});if(!r||!r.success)throw new Error(r&&r.message||'Không lưu được');closeModal();toast(r.message);await renderPaymentsV209();}catch(e){toast(e.message,'error');}finally{setSaving(false);}};
+V223_IMPL["reviewPaymentV209__21426"] = async function(id,yes){const note=prompt(yes?'Ý kiến duyệt (có thể để trống):':'Lý do từ chối:')||'';if(!yes&&!note)return;const r=await gas('reviewPaymentRequest',id,{Decision:yes?'APPROVE':'REJECT',Notes:note});if(!r||!r.success)return toast(r&&r.message||'Không cập nhật được','error');toast(r.message);renderPaymentsV209();};
+V223_IMPL["markPaymentPaidV209__21427"] = async function(id){const ref=prompt('Nhập mã giao dịch / phiếu chi (có thể để trống):')||'';const r=await gas('markPaymentRequestPaid',id,{PaymentID:ref});if(!r||!r.success)return toast(r&&r.message||'Không cập nhật được','error');toast(r.message);renderPaymentsV209();};
+V223_IMPL["exportPaymentRequestV209__21428"] = async function(id){try{const r=await gas('getPaymentRequestFormData',id);if(!r||!r.success)throw new Error(r&&r.message||'Không đọc được đề nghị');await napThuVien('xlsx');const x=r.data.request,p=r.data.project||{},docs=r.data.documents||[],docText=docs.map(d=>d.DocumentType+(d.DocumentNo?' '+d.DocumentNo:'')+(d.FileUrl?' '+d.FileUrl:'')).join('\n');const headers=['Payment Code','STT','Nhà Cung cấp (tên công ty)','Loại đề nghị','Số Hợp đồng/PO','Số Hoá đơn/Invoice','Ngày hoá đơn','Số tài khoản','Ngân hàng nhận','Số tiền TT (Đề nghị)','Lý do đề nghị thanh toán (song ngữ)','Purpose','Project','Chứng từ Thanh toán','Lũy kế số tiền các lần đã thanh toán (Contract)','Số tiền còn lại của hợp đồng cần thanh toán (sau khi trừ khoản thanh toán lần này)','Số tiền thanh toán lần tiếp theo','Lịch thanh toán tiếp theo (week)','Remark'];const row=[x.PaymentCode,1,x.SupplierName,paymentTypeLabelV209(x.PaymentType),x.ContractPONo||x.PurchaseID,x.InvoiceNo,x.InvoiceDate?new Date(x.InvoiceDate):'',x.BankAccount,x.BankName,Number(x.Amount)||0,x.Purpose,x.PurposeCode,p.ProjectCode||p.ProjectName||x.ProjectID,(x.PaymentDocumentMethod||'MAIL')+(docText?'\n'+docText:''),Number(x.AccumulatedPaid)||0,Number(x.RemainingContractAmount)||0,Number(x.NextPaymentAmount)||0,x.NextPaymentWeek,x.Remarks||x.Notes||''];const ws=XLSX.utils.aoa_to_sheet([headers,row]);ws['!cols']=[18,7,34,25,25,20,14,20,38,20,46,30,18,42,22,28,20,22,30].map(wch=>({wch}));ws['!autofilter']={ref:'A1:S2'};['G2'].forEach(c=>{if(ws[c])ws[c].z='dd/mm/yyyy';});['J2','O2','P2','Q2'].forEach(c=>{if(ws[c])ws[c].z='#,##0';});const codes=XLSX.utils.aoa_to_sheet([['Payment purpose code'],...(r.data.purposeCodes||[]).map(v=>[v])]);codes['!cols']=[{wch:58}];const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'template');XLSX.utils.book_append_sheet(wb,codes,'code');XLSX.writeFile(wb,(x.PaymentCode||id)+'_Payment_Request.xlsx');}catch(e){toast(e.message,'error');}};
+V223_IMPL["renderMaterialControlTab__21729"] = async function(tab){return renderMaterialScopedV224(tab);};
+V223_IMPL["bomAllocSaveV216__22050"] = async function(){
+  const d=MACHINE_BOM_CACHE||{},v=d.selectedVersion,check=bomAllocValidationV216();
+  if(!v||check.errors.length)return toast('Dữ liệu phân bổ chưa hợp lệ.','error');
+  const payload=BOM_ALLOC.groups.map((g,gi)=>({
+    SourceLineIDs:g.source.map(x=>x.BOMLineID),
+    Allocations:BOM_ALLOC.rows.filter(r=>r.gi===gi&&(Number(r.qty)||0)>0).map(r=>({ModuleID:r.moduleId||'',Quantity:Number(r.qty)}))
+  }));
+  setSaving(true);
+  try{
+    const r=await gas('saveBOMModuleAllocations',v.BOMVersionID,payload);
+    if(!r||!r.success)throw new Error(r&&r.message||'Không lưu được phân bổ');
+    closeModal();toast(r.message);await openMachineBOM(d.machine.MachineID,v.BOMVersionID);
+  }catch(e){toast(e.message,'error');}finally{setSaving(false);}
+};
+V223_IMPL["previewProcImportV219__22196"] = async function(id){return procWrite(async()=>{
+  const file=$('#procQuoteFile')&&$('#procQuoteFile').files[0];if(!file)throw new Error('Chọn file báo giá.');if(file.size>8*1024*1024)throw new Error('File báo giá quá 8 MB.');
+  const supplier=amcvnVal('procSupplier');if(!supplier)throw new Error('Chọn nhà cung cấp.');
+  const lead=amcvnVal('procQuoteLead'),vat=amcvnVal('procQuoteVAT'),terms=amcvnVal('procQuoteTerms'),valid=amcvnVal('procQuoteValid');
+  if(lead==='')throw new Error('Nhập leadtime chung.');if(!terms)throw new Error('Nhập điều khoản thanh toán chung.');if(!valid)throw new Error('Chọn ngày hết hiệu lực.');
+  await napThuVien('xlsx');const wb=XLSX.read(new Uint8Array(await file.arrayBuffer()),{type:'array',cellDates:true});
+  const payload={SupplierID:supplier,ClientRef:'BQ-'+Date.now()+'-'+Math.random().toString(36).slice(2),VATPercent:vat,LeadDays:lead,PaymentTerms:terms,ValidUntil:valid,items:procParseQuoteWorkbook(wb,id)};
+  PROC_QUOTE={id,payload};const d=await procCall('previewSupplierQuotation',id,payload),common=d.commonTerms||{};
+  $('#procQuotePreview').innerHTML='<div class="proc-quote-summary-v219"><b>'+esc(d.supplier.SupplierName)+'</b><span>'+d.items.length+' dòng có giá</span><span>'+d.missingLines+' dòng bỏ qua</span><span>VAT '+fmtNum(common.VATPercent||0)+'%</span><span>Leadtime '+fmtNum(common.LeadDays||0)+' ngày</span><span>Tổng: '+fmtNum(d.total)+' '+esc(d.rfq.Currency)+'</span></div>'
+    +procTable([{label:'Mã hàng',key:'PartNumber'},{label:'SL',key:'Quantity',right:true},{label:'Đơn giá',render:x=>fmtNum(x.UnitCost),right:true},{label:'VAT %',key:'VATPercent',right:true},{label:'Leadtime',render:x=>fmtNum(x.LeadDays)+' ngày',right:true},{label:'Thanh toán',key:'PaymentTerms'},{label:'Hiệu lực',key:'ValidUntil'}],d.items);
+  procQuoteSetActionV219('save');
+});};
+V223_IMPL["saveProcImportV219__22208"] = async function(){return procWrite(async()=>{
+  if(!PROC_QUOTE)throw new Error('Dữ liệu đã thay đổi hoặc chưa được kiểm tra. Hãy đọc và kiểm tra lại.');
+  const id=PROC_QUOTE.id;await procCall('importSupplierQuotation',id,PROC_QUOTE.payload);PROC_QUOTE=null;toast('Đã nhập báo giá');await openProcRFQ(id);
+});};
+V223_IMPL["openProcProposal__22228"] = async function(id){
+  try{
+    PROC_PROPOSAL=await procCall('getPurchaseProposal',id);
+    const h=PROC_PROPOSAL.proposal,c=PROC_PROPOSAL.context||{},rows=PROC_PROPOSAL.reviewLines||PROC_PROPOSAL.items||[];
+    const context='<div class="proc-context-v220">'
+      +'<div><span>Dự án</span><b>'+procContextValueV220(c.ProjectCodes,'Không gắn dự án')+'</b></div>'
+      +'<div><span>Máy</span><b>'+procContextValueV220(c.MachineCodes,'Không gắn máy')+'</b></div>'
+      +'<div><span>Phạm vi cụm</span><b>'+((c.ModuleCodes||[]).length?fmtNum(c.ModuleCodes.length)+' cụm':'Toàn máy / dùng chung')+'</b><small title="'+esc((c.ModuleCodes||[]).join(' · '))+'">'+esc((c.ModuleCodes||[]).slice(0,3).join(' · '))+'</small></div>'
+      +'<div><span>RFQ / Đề nghị</span><b>'+esc(h.RFQID||'')+' · '+esc(h.RequestID||'')+'</b></div>'
+      +'<div><span>Mặt hàng / Số lượng</span><b>'+fmtNum(c.TotalItems||rows.length)+' / '+fmtNum(c.TotalQuantity||0)+'</b></div>'
+      +'<div><span>Tổng gồm VAT</span><b class="text-brand-600">'+fmtNum(h.TotalAmount)+' '+esc(h.Currency||'')+'</b></div></div>';
+    const status='<div class="proc-review-note-v220"><b>'+procStatus(h.Status)+'</b>'+(h.SelectionNotes?'<span>Lý do chọn NCC: '+esc(h.SelectionNotes)+'</span>':'')+(h.ApprovalNotes?'<span>Ý kiến duyệt: '+esc(h.ApprovalNotes)+'</span>':'')+'</div>';
+    const table='<div class="proc-proposal-review-v220">'+procTable([
+      {label:'Mã hàng / Vật tư',width:270,render:x=>'<b class="proc-code">'+esc(x.PartNumber||x.SKU||'')+'</b><small>'+esc(x.ProductName||'')+(x.BrandMaterial?' · '+esc(x.BrandMaterial):'')+'</small>'},
+      {label:'Số lượng',width:85,right:true,render:x=>'<b>'+fmtNum(x.Quantity||0)+'</b><small>'+esc(x.Unit||'')+'</small>'},
+      {label:'NCC và giá lựa chọn',width:235,render:procSelectedBidV220},
+      {label:'Báo giá các NCC',width:300,render:procAlternativeBidsV220},
+      {label:'Lịch sử mua gần nhất',width:285,render:procPurchaseHistoryV220},
+      {label:'Thành tiền gồm VAT',width:165,right:true,render:x=>'<b class="text-brand-600">'+fmtNum(x.LineAmount||0)+'</b><small>'+esc(x.Currency||h.Currency||'')+'</small>'}
+    ],rows,{empty:'Phiếu mua chưa có mặt hàng.'})+'</div>';
+    const review=['PENDING_APPROVAL','APPROVED'].includes(h.Status)?field('Ý kiến duyệt',txt('procApprovalNote','',h.ApprovalNotes||'')):'';
+    let footer=btnSecondary('Đóng','closeModal()','close');
+    if(h.Status==='PENDING_APPROVAL'&&canEdit('purchasing')&&canSee('approve_purchase'))footer+=btnSecondary('Từ chối','saveProcProposalReview('+jsArg(id)+',false)','close')+btnPrimary('Duyệt phiếu mua','saveProcProposalReview('+jsArg(id)+',true)','approval');
+    if(h.Status==='APPROVED'&&canEdit('purchasing')&&canSee('approve_purchase'))footer+=btnSecondary('Trả về báo giá','saveProcProposalReview('+jsArg(id)+',false)','undo');
+    openModal(modalShell({title:'Phiếu mua '+id,subtitle:'RFQ '+h.RFQID+' · Người lập '+h.CreatedBy,icon:'fact_check',body:context+status+table+review,footer}),1400);
+  }catch(e){console.warn('[openProcProposal v20.20]',(e&&e.message)||String(e));toast(e.message,'error');}
+};
+V223_INSTALLED["supply"] = "v20.24-969a11832328";

@@ -1,0 +1,20 @@
+{
+  "build": "v20.24-969a11832328",
+  "passed": 14,
+  "tests": [
+    "large Vietnamese/emoji payload survives cache round trip and respects entry byte limit",
+    "eviction of any chunk is a cache miss, never partial business data",
+    "simultaneous publications use different generation keys",
+    "oversize values are skipped without breaking data reads",
+    "existing sheet reader uses large cache across requests; mutation bypasses cache",
+    "cache service failure falls back to sheet read",
+    "default global cache remains compatible with old deployments",
+    "opt-in scoped cache invalidates written sheets, preserves unrelated tables at commit",
+    "unknown writes/rollback invalidate every scoped table even after a prior scoped write",
+    "module endpoint blocks unauthenticated, invalid name and mismatched build",
+    "all five JavaScript modules are returned byte-for-byte without HTML parsing",
+    "module read failures do not falsely claim the file is missing or expose source",
+    "large aggregate payload builds once and invalidates with global version",
+    "physical read metrics contain only counts and timing"
+  ]
+}

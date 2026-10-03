@@ -1,0 +1,2453 @@
+/* AMCVN v20.24-969a11832328 / extended */
+V223_IMPL["applySalesPriceFormulaToLine___3220"] = async function(li) {
+  if (!li || !li.ProductID) return;
+
+  // Chỉ áp dụng cho giá bán. Không áp dụng cho phiếu mua / nhập kho.
+  if (LINE_PRICE_MODE !== 'sale') return;
+
+  li._formulaLoading = true;
+  refreshLines();
+
+  try {
+    const r = await gas('getPriceFormulaForProduct', li.ProductID);
+
+    // Dòng có thể đã bị xóa trong lúc chờ server.
+    if (LINE_ITEMS.indexOf(li) < 0) return;
+
+    li._formulaLoading = false;
+
+    if (r && r.success && r.data && r.data.formula) {
+      const f = r.data.formula;
+      const unitPrice = salesFormulaUnitPrice_(f, li.price, r.data.preview);
+
+      li._priceFormula = f;
+      li._priceFormulaPreview = r.data.preview || 0;
+
+      // Chỉ tự set giá nếu user chưa tự sửa tay.
+      if (!li._manualPrice && unitPrice > 0) {
+        li.price = unitPrice;
+      }
+    } else {
+      li._priceFormula = null;
+      li._priceFormulaPreview = 0;
+    }
+
+    refreshLines();
+  } catch (e) { console.warn('[applySalesPriceFormulaToLine_]', (e && e.message) || String(e)); 
+    if (LINE_ITEMS.indexOf(li) >= 0) {
+      li._formulaLoading = false;
+      refreshLines();
+    }
+  }
+};
+V223_IMPL["renderSalesTab__5099"] = async function(tab){
+  const body=$('#tabBody'); body.innerHTML=loadingBlock();
+  if(tab==='overview'){
+    const so=await load('sales','getSalesOrders');
+    await loadReturnMap();
+    const revenue=so.filter(x => x.Status !== 'NO_CU').reduce((s,x)=>s+Number(x.TotalAmount||0),0);
+    const profit=so.filter(x => x.Status !== 'NO_CU').reduce((s,x)=>s+Number(x.Profit||0),0);
+    const recv=so.reduce((s,x)=>s+Number(x.ReceivableAmount||0),0); // LUÔN CỘNG CÔNG NỢ
+    body.innerHTML='<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-4">'
+      +kpiCard('Doanh thu', '<span id="soKpiRevenue">'+fmtVND(revenue)+'</span>','sell','bg-brand-50 text-brand-600',12)
+      +kpiCard('Lợi nhuận', '<span id="soKpiProfit">'+fmtVND(profit)+'</span>','savings','bg-emerald-50 text-emerald-600')
+      +kpiCard('Số phiếu bán', '<span id="soKpiCount">'+fmtNum(so.length)+'</span>','receipt','bg-indigo-50 text-indigo-600')
+      +kpiCard('Phải thu', '<span id="soKpiRecv">'+fmtVND(recv)+'</span>','request_quote','bg-rose-50 text-rose-600')
+      +'</div><div class="flex items-center justify-between mb-3"><h3 class="font-semibold text-ink">Danh sách phiếu bán hàng</h3>'+btnPrimary('Tạo phiếu bán','openSalesModal()','add')+'</div>'
+      +filterableTable('soOverview', normalizeSalesRows(so.slice().reverse()), soCols(true), {search:['SalesID','CustomerName'], searchPlaceholder:'Tìm phiếu bán, khách hàng...', selects:[{field:'PaymentStatus',label:'Thanh toán'},{field:'Status',label:'Trạng thái'}], dateField:'SalesDate', onRowClick:'viewSales', idKey:'SalesID', onFilter:updateSalesKpis, sorts:[{value:'date:SalesDate',label:'Đơn mới nhất / ngày bán'},{value:'field:SalesID',label:'Mã phiếu bán'},{value:'field:CustomerName',label:'Khách hàng A-Z'},{value:'field:TotalAmount',label:'Tổng tiền'},{value:'field:ReceivableAmount',label:'Còn nợ'}]});
+    return;
+  }
+  if(tab==='customers'){
+    const [cus]=await Promise.all([load('customers','getCustomers'), load('sales','getSalesOrders')]);
+    body.innerHTML=filterableTable('cus', cus, cusCols(), {search:['CustomerName','Phone','CustomerID'], searchPlaceholder:'Tìm khách hàng...', selects:[{field:'CustomerGroup',label:'Nhóm'},{field:'Status',label:'Trạng thái'}], onRowClick:'viewCustomer', idKey:'CustomerID', action:btnPrimary('Thêm khách hàng','openCustomerModal()')});
+    return;
+  }
+  if(tab==='quotes'){
+    const q=await load('quotes','getQuotes');
+    body.innerHTML=filterableTable('quotes', q.slice().reverse(), [
+        {label:'Mã BG',key:'QuoteID'},{label:'Ngày',render:r=>fmtDate(r.QuoteDate)},{label:'Khách hàng',key:'CustomerName'},
+        {label:'Tổng tiền',right:true,render:r=>fmtVND(r.TotalAmount)},{label:'Hết hạn',render:r=>fmtDate(r.ExpiredDate)},
+        {label:'Ghi chú',render:r=>noteCell('Quotes',r.QuoteID,r.Notes)},
+        {label:'Trạng thái',render:r=>r.Status==='Đã chuyển HĐ'?badge(r.Status):statusSelect('Quotes','QuoteID',r.QuoteID,r.Status,['Mới','Đã gửi KH','Đã huỷ'])}
+      ], {search:['QuoteID','CustomerName'], searchPlaceholder:'Tìm báo giá, khách hàng...', selects:[{field:'Status',label:'Trạng thái'}], dateField:'QuoteDate', defaultSortField:'CreatedAt', onRowClick:'viewQuote', idKey:'QuoteID', action:btnPrimary('Tạo báo giá','openQuoteModal()')});
+    return;
+  }
+  if(tab==='invoices'){
+    const so=await load('sales','getSalesOrders');
+    await loadReturnMap();
+    body.innerHTML=filterableTable('so', normalizeSalesRows(so.slice().reverse()), soCols(true), {search:['SalesID','CustomerName'], searchPlaceholder:'Tìm phiếu bán, khách hàng...', selects:[{field:'PaymentStatus',label:'Thanh toán'}], dateField:'SalesDate', onRowClick:'viewSales', idKey:'SalesID', action:btnPrimary('Tạo phiếu bán','openSalesModal()')});
+    return;
+  }
+  if(tab==='returns'){
+    const list=await load('returns','getSalesReturns');
+    const rows=list.map(r=>Object.assign({},r,{DisplayStatus:returnDisplayStatus(r)})).slice().reverse();
+    body.innerHTML=filterableTable('returns', rows, [
+        {label:'Mã phiếu',key:'ReturnID'},{label:'Ngày',render:r=>fmtDate(r.ReturnDate)},{label:'Khách hàng',key:'CustomerName'},
+        {label:'HĐ gốc',key:'SalesID'},{label:'Giá trị trả',right:true,render:r=>fmtVND(r.TotalAmount)},
+        {label:'Cần hoàn',right:true,render:r=>Number(r.RefundAmount)>0?'<span class="font-bold text-amber-600">'+fmtVND(r.RefundAmount)+'</span>':'<span class="text-muted">-</span>'},
+        {label:'Kiểu xử lý',render:r=>esc(r.ReturnType)},
+        {label:'Ghi chú',render:r=>noteCell('SalesReturns',r.ReturnID,r.Notes)},
+        {label:'Trạng thái',render:r=>badge(r.DisplayStatus)},
+        {label:'',right:true,render:r=>'<button onclick="event.stopPropagation();viewReturn(\''+r.ReturnID+'\')" class="text-brand-600 w-8 h-8 rounded-lg hover:bg-brand-50"><span class="ms text-[18px]">visibility</span></button>'}
+      ], {search:['ReturnID','CustomerName','SalesID'], searchPlaceholder:'Tìm phiếu trả, khách hàng...', selects:[{field:'ReturnType',label:'Kiểu'},{field:'DisplayStatus',label:'Trạng thái'}], dateField:'ReturnDate', defaultSortField:'CreatedAt', onRowClick:'viewReturn', idKey:'ReturnID', empty:'Chưa có phiếu trả hàng', action:btnPrimary('Tạo phiếu trả hàng','openReturnModal()','assignment_return')});
+    return;
+  }
+  if(tab==='debt'){
+    const r=await gas('getReceivables'); const rows=sortByOverduePay(r.data||[]).map(x=>Object.assign({},x,{TinhTrang:x.Overdue?'Quá hạn':x.PaymentStatus}));
+    body.innerHTML=filterableTable('sodebt', rows, [
+      {label:'Mã HĐ',key:'SalesID'},{label:'Khách hàng',key:'CustomerName'},{label:'Tổng tiền',right:true,render:r=>fmtVND(r.TotalAmount)},
+      {label:'Đã thu',right:true,render:r=>fmtVND(r.PaidAmount)},{label:'Còn nợ',right:true,render:r=>'<span class="'+(r.Overdue?'text-rose-600 font-semibold':'')+'">'+fmtVND(r.ReceivableAmount)+'</span>'},
+      {label:'Hạn',render:r=>fmtDate(r.DueDate)},{label:'Tình trạng',render:r=>badge(r.TinhTrang)},
+      {label:'',render:r=>'<button onclick="event.stopPropagation();openPaymentModal(\'SalesOrder\',\''+r.SalesID+'\','+Number(r.ReceivableAmount)+')" class="text-brand-600 text-[12px] font-semibold hover:underline">Thu nợ</button>'}
+    ], {search:['SalesID','CustomerName'], searchPlaceholder:'Tìm hóa đơn, khách hàng...', selects:[{field:'TinhTrang',label:'Tình trạng'}], dateField:'DueDate', idKey:'SalesID', onRowClick:'viewSales', empty:'Không có công nợ phải thu', action:btnPrimary('Tạo phiếu thu','openCustomerReceiptModal()','add_card')});
+    return;
+  }
+};
+V223_IMPL["renderDebtTab__5207"] = async function(tab){
+  const body=$('#tabBody'); body.innerHTML=loadingBlock();
+  if(tab==='overview'){
+    const r=await gas('getDebtSummary'); const d=r.data||{};
+    body.innerHTML='<div class="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-6">'
+      +kpiCard('Tổng phải thu', fmtVND(d.receivable),'south_west','bg-emerald-50 text-emerald-600')
+      +kpiCard('Tổng phải trả', fmtVND(d.payable),'north_east','bg-amber-50 text-amber-600')
+      +kpiCard('Nợ quá hạn (thu+trả)', fmtVND((d.overdueReceivable||0)+(d.overduePayable||0)),'warning','bg-rose-50 text-rose-600')
+      +'</div>'+card('<div class="p-5"><h3 class="font-semibold text-ink mb-4">Dòng tiền công nợ</h3><div class="h-[280px]"><canvas id="debtChart"></canvas></div></div>');
+    drawBar('debtChart',['Phải thu','Phải trả','Quá hạn thu','Quá hạn trả'],[d.receivable,d.payable,d.overdueReceivable,d.overduePayable],['#10b981','#f59e0b','#7c3aed','#ef4444']);
+    return;
+  }
+  if(tab==='receivable'){ const r=await gas('getReceivables'); const rows=sortByOverduePay(r.data||[]).map(x=>Object.assign({},x,{TinhTrang:x.Overdue?'Quá hạn':'Trong hạn'}));
+    body.innerHTML=filterableTable('recv', rows, [
+      {label:'Mã HĐ',key:'SalesID'},{label:'Khách hàng',key:'CustomerName'},{label:'Còn nợ',right:true,render:r=>fmtVND(r.ReceivableAmount)},
+      {label:'Hạn',render:r=>fmtDate(r.DueDate)},{label:'Tình trạng',render:r=>badge(r.TinhTrang)},
+      {label:'',render:r=>'<button onclick="event.stopPropagation();openPaymentModal(\'SalesOrder\',\''+r.SalesID+'\','+Number(r.ReceivableAmount)+')" class="text-brand-600 text-[12px] font-semibold hover:underline">Thu nợ</button>'}
+    ], {search:['SalesID','CustomerName'], searchPlaceholder:'Tìm hóa đơn, khách hàng...', selects:[{field:'TinhTrang',label:'Tình trạng'}], dateField:'DueDate', idKey:'SalesID', onRowClick:'viewSales', empty:'Không còn phải thu', action:btnPrimary('Tạo phiếu thu','openCustomerReceiptModal()','add_card')});
+    return; }
+  if(tab==='payable'){ const r=await gas('getPayables'); const rows=sortByOverduePay(r.data||[]).map(x=>Object.assign({},x,{TinhTrang:x.Overdue?'Quá hạn':'Trong hạn'}));
+    body.innerHTML=filterableTable('pay2', rows, [
+      {label:'Mã phiếu',key:'PurchaseID'},{label:'NCC',key:'SupplierName'},{label:'Còn nợ',right:true,render:r=>fmtVND(r.PayableAmount)},
+      {label:'Hạn',render:r=>fmtDate(r.DueDate)},{label:'Tình trạng',render:r=>badge(r.TinhTrang)},
+      {label:'',render:r=>'<button onclick="event.stopPropagation();openPaymentModal(\'PurchaseOrder\',\''+r.PurchaseID+'\','+Number(r.PayableAmount)+')" class="text-brand-600 text-[12px] font-semibold hover:underline">Thanh toán</button>'}
+    ], {search:['PurchaseID','SupplierName'], searchPlaceholder:'Tìm phiếu mua, NCC...', selects:[{field:'TinhTrang',label:'Tình trạng'}], dateField:'DueDate', idKey:'PurchaseID', onRowClick:'viewPurchase', empty:'Không còn phải trả', action:btnPrimary('Tạo phiếu chi','openSupplierPaymentModal()','payments')});
+    return; }
+  if(tab==='history'){ const r=await gas('getPaymentHistory'); body.innerHTML=filterableTable('pay', (r.data||[]).slice().reverse(), [
+    {label:'Mã',key:'PaymentID'},{label:'Ngày',render:r=>fmtDate(r.PaymentDate)},{label:'Đối tượng',key:'ObjectName'},
+    {label:'Chứng từ',render:r=>esc(r.SourceID||((String(r.SourceType||'').indexOf('Customer')>=0)?'Thu trước':'Trả trước'))},{label:'Hướng',render:r=>badge(r.PaymentDirection)},
+    {label:'Số tiền',right:true,render:r=>'<span class="'+((r.PaymentDirection==='Thu'||r.PaymentDirection==='In')?'text-emerald-600':'text-rose-600')+' font-medium">'+fmtVND(r.Amount)+'</span>'},
+    {label:'Phương thức',key:'Method'},
+    {label:'Bill',right:true,render:r=>r.BillImageUrl?'<button onclick="event.stopPropagation();openBillPreview(\''+esc(driveImageUrl(r.BillImageUrl))+'\',\''+esc(r.PaymentID)+'\')" class="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 inline-flex items-center justify-center"><span class="ms text-[17px]">image</span></button>':'<span class="text-stroke">-</span>'}
+  ], {search:['PaymentID','ObjectName','SourceID'], searchPlaceholder:'Tìm thanh toán, đối tượng...', selects:[{field:'PaymentDirection',label:'Hướng'},{field:'Method',label:'Phương thức'}], dateField:'PaymentDate', onRowClick:'viewPayment', idKey:'PaymentID'}); return; }
+  if(tab==='cashflow'){
+    const r=await gas('getCashFlowForecast'); const d=r.data||{}; const w=d.weeks||[];
+    body.innerHTML='<div class="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-6">'
+      +kpiCard('Dự kiến thu (30 ngày)',fmtVND(d.inflow),'south_west','bg-emerald-50 text-emerald-600')
+      +kpiCard('Dự kiến chi (30 ngày)',fmtVND(d.outflow),'north_east','bg-amber-50 text-amber-600')
+      +kpiCard('Dòng tiền ròng',fmtVND(d.net),'trending_up',(d.net>=0?'bg-emerald-50 text-emerald-600':'bg-rose-50 text-rose-600'))
+      +'</div>'
+      +card('<div class="p-5"><h3 class="font-semibold text-ink mb-4">Dòng tiền dự kiến theo kỳ</h3><div class="h-[300px]"><canvas id="cfChart"></canvas></div></div>')
+      +'<div class="mt-5">'+card('<div class="p-1">'+dataTable([
+        {label:'Kỳ',key:'label'},{label:'Dự kiến thu',right:true,render:x=>fmtVND(x.in)},{label:'Dự kiến chi',right:true,render:x=>fmtVND(x.out)},{label:'Ròng',right:true,render:x=>'<span class="'+((x.in-x.out)>=0?'text-emerald-600':'text-rose-600')+' font-medium">'+fmtVND(x.in-x.out)+'</span>'}
+      ], w)+'</div>')+'</div>';
+    { const ctx=document.getElementById('cfChart'); if(ctx){ mkChart('cfChart',{type:'bar',data:{labels:w.map(x=>x.label),datasets:[{label:'Thu',data:w.map(x=>x.in),backgroundColor:'#10b981',borderRadius:6},{label:'Chi',data:w.map(x=>x.out),backgroundColor:'#f59e0b',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8,font:{family:'Inter'}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtVND(c.raw)}}},scales:{y:{ticks:{callback:v=>fmtShort(v),font:{family:'Inter'}},grid:{color:'#f3f4f6'}},x:{grid:{display:false},ticks:{font:{family:'Inter'}}}}}}); } }
+    return;
+  }
+  if(tab==='overdue'){
+    const rec=await gas('getReceivables'); const pay=await gas('getPayables');
+    const rows=[].concat((rec.data||[]).filter(x=>x.Overdue).map(x=>({type:'Phải thu',code:x.SalesID,name:x.CustomerName,amount:x.ReceivableAmount,due:x.DueDate})),
+      (pay.data||[]).filter(x=>x.Overdue).map(x=>({type:'Phải trả',code:x.PurchaseID,name:x.SupplierName,amount:x.PayableAmount,due:x.DueDate})));
+    body.innerHTML=filterableTable('ovd', rows, [
+      {label:'Loại',render:r=>badge(r.type)},{label:'Chứng từ',key:'code'},{label:'Đối tượng',key:'name'},
+      {label:'Số tiền',right:true,render:r=>'<span class="text-rose-600 font-semibold">'+fmtVND(r.amount)+'</span>'},{label:'Hạn',render:r=>fmtDate(r.due)}
+    ], {search:['code','name'], searchPlaceholder:'Tìm chứng từ, đối tượng...', selects:[{field:'type',label:'Loại'}], dateField:'due', empty:'Tuyệt vời! Không có công nợ quá hạn'});
+    return;
+  }
+};
+V223_IMPL["renderReportsTab__5288"] = async function(tab, keepContent){
+  const body=$('#tabBody');
+  if(tab==='audit') return renderAuditTab();
+  if(tab==='vat') return renderVatReportTab();
+  const rf=reportDateRange();
+  const ck=JSON.stringify(rf);
+  if(RPT_DATA_CACHE[ck]){ renderReportsView(tab,RPT_DATA_CACHE[ck],rf); return; }
+  if(!keepContent || !body.innerHTML.trim()) body.innerHTML=loadingBlock();
+  else body.style.opacity='.55';
+  const r=await gas('getReportsData',rf);
+  body.style.opacity='1';
+  if(!r.success){ body.innerHTML=emptyState(r.message||'Không tải được báo cáo'); return; }
+  RPT_DATA_CACHE[ck]=r.data||{};
+  renderReportsView(tab,RPT_DATA_CACHE[ck],rf);
+};
+V223_IMPL["doExport__5380"] = async function(){
+  const fields=$$('#exFields .exf').filter(c=>c.checked).map(c=>({key:c.dataset.key,label:c.dataset.label}));
+  if(!fields.length) return toast('Chọn ít nhất 1 trường','error');
+  const ds=EXPORT_DS[EXPORT_CUR];
+  if(SAVING)return; setSaving(true); toast('Đang tạo file Excel...','info');
+  const r=await gas('exportExcelReport', ds.key, fields, ds.label.toUpperCase()); setSaving(false);
+  if(r.success && r.data){ const a=document.createElement('a'); a.href='data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,'+r.data.base64; a.download=r.data.filename; document.body.appendChild(a); a.click(); a.remove(); toast('Đã xuất Excel'); closeModal(); }
+  else toast(r.message||'Lỗi xuất file','error');
+};
+V223_IMPL["renderSettings__5404"] = async function(p){
+  SETTINGS_DIRTY=false;
+  SET_DRAFT={};
+  p.innerHTML=pageHeader('Cài đặt hệ thống','Mỗi nhóm cấu hình một mục riêng — chọn mục ở bên trái để thiết lập',
+      '<button id="setHeadSave" onclick="saveAllSettings()" class="grad text-white px-4 py-2.5 rounded-xl text-[13px] font-semibold flex items-center gap-1.5 shadow-card hover:opacity-95"><span class="ms text-[18px]">save</span>Lưu thay đổi</button>')
+    +'<div id="setBody">'+loadingBlock()+'</div>'+settingsSaveBarHtml();
+  const sr=await gas('getSettings');
+  const sb=$('#setBody'); if(!sb) return;
+  SET_DATA=(sr&&sr.data)||{};
+  sb.innerHTML='<div class="grid grid-cols-1 lg:grid-cols-[268px_1fr] gap-5 items-start">'
+    +'<aside class="lg:sticky lg:top-4"><div class="bg-white rounded-2xl shadow-card border border-line p-3">'
+    +   '<div class="relative mb-2"><span class="ms absolute left-2.5 top-1/2 -translate-y-1/2 text-muted text-[18px] pointer-events-none">search</span>'
+    +   '<input id="setNavSearch" oninput="stFilterNav(this.value)" placeholder="Tìm mục cài đặt..." class="w-full pl-9 pr-3 py-2 rounded-xl bg-bg border border-stroke text-[13px]"/></div>'
+    +   '<nav id="setNav" class="flex lg:flex-col gap-1.5 overflow-x-auto lg:overflow-visible pb-1 lg:pb-0"></nav>'
+    + '</div></aside>'
+    +'<div id="setSection" class="min-w-0"></div>'
+    +'</div>';
+  sb.addEventListener('input', settingsMaybeDirty);
+  sb.addEventListener('change', settingsMaybeDirty);
+  stRenderNav();
+  stGo(STATE.setTab||SET_SECTIONS[0].id, true);
+  clearSettingsDirty();
+};
+V223_IMPL["runSchemaUpgrade__5428"] = async function(){
+  toast('Đang kiểm tra cấu trúc bảng...','info');
+  const r=await gas('capNhatCauTrucSheet');
+  toast(r.message, r.success?'success':'error');
+};
+V223_IMPL["runReconcile__5433"] = async function(){ toast('Đang đối soát...','info'); const r=await gas('reconcileAll'); if(r.success){ toast(r.message); invalidate('products','sales','purchases','customers','suppliers','movements'); delete STATE.cache.finance; } else toast(r.message,'error'); };
+V223_IMPL["runBackup__5434"] = async function(){ toast('Đang sao lưu...','info'); const r=await gas('backupSpreadsheet'); toast(r.success?r.message:r.message, r.success?'success':'error'); };
+V223_IMPL["runBackupSchedule__5435"] = async function(on){ toast('Đang cập nhật lịch...','info'); const r=await gas(on?'setupBackupSchedule':'disableBackupSchedule'); toast(r.success?r.message:r.message, r.success?'success':'error'); };
+V223_IMPL["saveAllSettings__5436"] = async function(){
+  settingsHarvest();
+  const obj={};
+  // Lấy từ BẢN NHÁP -> mục đã mở ở tab khác vẫn được lưu, không mất khi chuyển mục.
+  // Lưu MỌI khóa đã gom, KHÔNG dùng danh sách cố định: thêm ô mới trong Cài đặt là
+  // tự lưu được (backend saveSettings nhận khóa tự do). Danh sách cố định trước đây
+  // bỏ sót Tên chứng từ và Nhóm KH/NCC -> khách gõ xong bấm Lưu là mất mà không báo gì.
+  Object.keys(SET_DRAFT).forEach(k=>{ if(SET_DRAFT[k]!==undefined) obj[k]=SET_DRAFT[k]; });
+  if(!Object.keys(obj).length) return toast('Chưa có thay đổi nào để lưu','info');
+  if(obj.ProductCategories!==undefined){
+    const classifications=parseOptionList(obj.ProductCategories);
+    if(!classifications.length) return toast('Phân loại Product Master phải có ít nhất một giá trị','error');
+    obj.ProductCategories=classifications.join(', ');
+    SET_DRAFT.ProductCategories=obj.ProductCategories;
+  }
+  nxSync('Đang lưu cài đặt...');
+  const r=await gas('saveSettings',obj);
+  nxSync('');
+  if(r.success){
+    toast('Đã lưu cài đặt');
+    SET_DATA=Object.assign(SET_DATA||{},obj);
+    clearSettingsDirty();
+    if(STATE.init){
+      STATE.init.settings=Object.assign(STATE.init.settings||{},obj);
+      if(obj.DefaultVAT!==undefined&&obj.DefaultVAT!==null&&obj.DefaultVAT!=='') STATE.init.defaultVat=Number(obj.DefaultVAT);
+    }
+    applyBranding(obj.BusinessName,obj.LogoUrl);
+  } else { console.error('[saveSettings]',r); toast(r.message,'error'); }
+};
+V223_IMPL["ensureFinanceData__5499"] = async function(force) {
+  if (force) delete STATE.cache.finance;
+
+  if (!isFullFinanceCache(STATE.cache.finance)) {
+    if (!FINANCE_LOAD_PROMISE) {
+      FINANCE_LOAD_PROMISE = gas('getFinanceBootstrap')
+        .finally(() => { FINANCE_LOAD_PROMISE = null; });
+    }
+
+    const r = await FINANCE_LOAD_PROMISE;
+    if (!r || !r.success) {
+      throw new Error((r && r.message) || 'Không tải được dữ liệu tài chính');
+    }
+
+    STATE.cache.finance = Object.assign({}, r.data || {}, { __full: true });
+    STATE.cacheAt = STATE.cacheAt || {};
+    STATE.cacheAt.finance = Date.now();
+
+    // Nếu đã có full finance thì đồng bộ luôn modal cache để các popup dùng nhanh.
+    STATE.cache.financeModal = {
+      cashAccounts: STATE.cache.finance.cashAccounts || [],
+      financeCategories: STATE.cache.finance.financeCategories || []
+    };
+  }
+
+  return STATE.cache.finance;
+};
+V223_IMPL["ensureFinanceModalData__5531"] = async function() {
+  if (financeModalReady()) return STATE.cache.financeModal;
+
+  if (!FINANCE_MODAL_PROMISE) {
+    FINANCE_MODAL_PROMISE = gas('getFinanceModalData').then(r => {
+      if (!r || !r.success) {
+        throw new Error((r && r.message) || 'Không tải được tài khoản tiền');
+      }
+
+      STATE.cache.financeModal = Object.assign({}, r.data || {});
+      scheduleFastCache();
+      return STATE.cache.financeModal;
+    }).finally(() => {
+      FINANCE_MODAL_PROMISE = null;
+    });
+  }
+
+  return FINANCE_MODAL_PROMISE;
+};
+V223_IMPL["afterFinanceChange__5677"] = async function(tab) {
+  closeModal();
+
+  // Xóa cả full finance cache và modal cache để không bị giữ dữ liệu cũ.
+  delete STATE.cache.finance;
+  delete STATE.cache.financeModal;
+
+  await ensureFinanceData(true);
+
+  if (STATE.route === 'finance') {
+    renderFinanceTab(curTab('finance', tab || 'overview'));
+  } else {
+    render();
+  }
+};
+V223_IMPL["runFinanceReconcile__5719"] = async function(){
+  toast('Đang đối soát sổ quỹ...','info');
+  const r=await gas('reconcileFinance');
+  if(r&&r.success){ toast(r.message||'Đã đối soát tài chính'); await afterFinanceChange(curTab('finance','overview')); }
+  else toast((r&&r.message)||'Không đối soát được','error');
+};
+V223_IMPL["renderFinanceTab__5743"] = async function(tab) {
+  const body = $('#tabBody');
+  const seq = ++FINANCE_RENDER_SEQ;
+
+  if (body && !isFullFinanceCache(STATE.cache.finance)) {
+    body.innerHTML = loadingBlock();
+  }
+
+  let d;
+  try {
+    d = await ensureFinanceData(false);
+  } catch (e) { console.warn('[renderFinanceTab]', (e && e.message) || String(e)); 
+    if (body) {
+      body.innerHTML = emptyState('Lỗi tải tài chính: ' + e.message);
+    }
+    return;
+  }
+
+  if (seq !== FINANCE_RENDER_SEQ || STATE.route !== 'finance' || curTab('finance', 'overview') !== tab) return;
+
+  // Nếu vì lý do nào đó vẫn nhận partial data, ép reload full một lần nữa.
+  if (!isFullFinanceCache(d)) {
+    if (body) {
+      body.innerHTML =
+        '<div class="rounded-2xl border border-amber-200 bg-amber-50 p-4 mb-5 text-[13px] text-amber-800">' +
+        '<b>Dữ liệu tài chính chưa tải đủ.</b> Hệ thống đang tải lại sổ thu chi...' +
+        '</div>' + loadingBlock();
+    }
+
+    try {
+      d = await ensureFinanceData(true);
+    } catch (e) { console.warn('[renderFinanceTab]', (e && e.message) || String(e)); 
+      if (body) body.innerHTML = emptyState('Lỗi tải tài chính: ' + e.message);
+      return;
+    }
+  }
+
+  if (seq !== FINANCE_RENDER_SEQ || STATE.route !== 'finance' || curTab('finance', 'overview') !== tab) return;
+
+  if (tab === 'overview') return renderFinanceOverview(d);
+  if (tab === 'transactions') return renderFinanceTransactions(d);
+  if (tab === 'accounts') return renderFinanceAccounts(d);
+  if (tab === 'budgets') return renderFinanceBudgets(d);
+  if (tab === 'reports') return renderFinanceReports(d);
+};
+V223_IMPL["financeRepair__5801"] = async function(){
+  toast('Đang khởi tạo lại module Tài chính...','info');
+  const r=await gas('migrateFinanceModule');
+  if(r&&r.success){ toast(r.message||'Đã khởi tạo lại'); await ensureFinanceData(true); if(STATE.route==='finance') renderFinanceTab(curTab('finance','overview')); }
+  else toast((r&&r.message)||'Không khởi tạo được','error');
+};
+V223_IMPL["financeDiagnose__5807"] = async function(){
+  openModalLoading('Chẩn đoán module Tài chính','stethoscope',720);
+  const r=await gas('diagnoseFinance');
+  if(!r||!r.success){ closeModal(); return toast((r&&r.message)||'Không chạy được chẩn đoán','error'); }
+  const steps=(r.data&&r.data.steps)||[];
+  $('#modalBox').innerHTML=modalShell({title:'Chẩn đoán module Tài chính',subtitle:(r.data.ok?'Tất cả các bước đều chạy được':'Có bước bị lỗi — xem chi tiết bên dưới'),icon:'stethoscope',
+    body:'<div class="rounded-2xl border border-line overflow-hidden"><table class="w-full text-[13px]"><tbody>'
+      +steps.map(s=>'<tr class="border-b border-line last:border-0">'
+        +'<td class="px-4 py-2.5 w-[36px]"><span class="ms text-[18px] '+(s.ok?'text-emerald-600':'text-rose-600')+'">'+(s.ok?'check_circle':'error')+'</span></td>'
+        +'<td class="px-2 py-2.5 font-medium text-ink">'+esc(s.step)+'</td>'
+        +'<td class="px-4 py-2.5 text-[12px] '+(s.ok?'text-muted':'text-rose-600 font-medium')+' break-words">'+esc(String(s.info==null?'':s.info))+'</td></tr>').join('')
+      +'</tbody></table></div>',
+    footer:btnSecondary('Dọn bút toán trùng','confirmRepairFinanceDuplicates()','cleaning_services')+btnSecondary('Khởi tạo lại','financeRepair()','build')+btnSecondary('Đóng','closeModal()','close')});
+};
+V223_IMPL["confirmRepairFinanceDuplicates__5822"] = async function(){
+  const chk=await gas('getFinanceDuplicates');
+  if(!chk||!chk.success) return toast((chk&&chk.message)||'Không kiểm tra được','error');
+  const d=chk.data||{}, drop=d.drop||[];
+  if(!drop.length) return financeConfirm({blocked:true,title:'Không có bút toán trùng',subtitle:'Sổ quỹ sạch',icon:'check_circle',
+    message:'Đã quét <b>'+fmtNum(d.total)+'</b> bút toán, không phát hiện dòng nào bị nhân bản.'});
+  const sum=drop.reduce((s,x)=>s+(Number(x.Amount)||0),0);
+  financeConfirm({title:'Dọn bút toán bị nhân bản',subtitle:'Số dư tài khoản sẽ được tính lại',icon:'cleaning_services',tone:'warn',
+    confirmText:'Xóa '+drop.length+' dòng trùng',confirmIcon:'cleaning_services',
+    message:'Phát hiện <b>'+fmtNum(drop.length)+'</b> bút toán bị ghi trùng trên tổng <b>'+fmtNum(d.total)+'</b> dòng, làm số dư sai lệch <b>'+fmtVND(sum)+'</b>.<br>Hệ thống sẽ giữ lại dòng đầu tiên của mỗi phiếu và xóa các bản sao, sau đó tính lại số dư.',
+    rows:drop.slice(0,8).map(x=>[String(x.TransactionID||'')+(x.SourceID?' · '+x.SourceID:''),fmtVND(x.Amount)]),
+    width:520,
+    onConfirm:async()=>{ toast('Đang dọn bút toán trùng...','info');
+      const r=await gas('repairFinanceDuplicates');
+      if(r&&r.success){ toast(r.message); await afterFinanceChange(curTab('finance','overview')); }
+      else toast((r&&r.message)||'Không dọn được','error'); }});
+};
+V223_IMPL["saveFinanceTransaction__6046"] = async function(id, dir){
+  const accEl=$('#finAccount'), amt=financeNum(($('#finAmount')||{}).value);
+  if(!accEl||!accEl.value) return toast(dir==='Transfer'?'Chọn tài khoản nguồn':'Chọn tài khoản tiền','error');
+  if(!amt||amt<=0) return toast('Nhập số tiền hợp lệ','error');
+  if(dir==='Transfer'){
+    const to=($('#finToAccount')||{}).value;
+    if(!to) return toast('Chọn tài khoản nhận','error');
+    if(String(to)===String(accEl.value)) return toast('Tài khoản nhận phải khác tài khoản nguồn','error');
+  } else if(!($('#finCategory')||{}).value){ return toast(dir==='In'?'Chọn danh mục thu':'Chọn danh mục chi','error'); }
+
+  const method=(($('#finMethod')||{}).value)||(dir==='Transfer'?'Chuyển khoản':'Tiền mặt');
+  const btn=$('#btnSaveFinanceTx');
+  const resetBtn=()=>{ if(btn){ btn.disabled=false; btn.innerHTML='<span class="ms text-[18px]">save</span> '+(id?'Lưu thay đổi':'Ghi nhận'); } };
+  if(btn){ btn.disabled=true; btn.innerHTML='<span class="ms text-[18px] animate-spin">progress_activity</span> Đang lưu...'; }
+
+  const data={TransactionDate:$('#finDate').value,Direction:dir,
+    TransactionType:dir==='Transfer'?'Transfer':(dir==='In'?'Income':'Expense'),
+    CategoryID:($('#finCategory')||{}).value||'',AccountID:accEl.value,ToAccountID:($('#finToAccount')||{}).value||'',
+    Amount:amt,Method:method,Notes:$('#finNotes').value};
+
+  try{
+    if(dir!=='Transfer' && method==='Chuyển khoản' && PAY_BILL.data){
+      toast('Đang tải bill chuyển khoản lên Drive...','info');
+      const up=await gas('uploadTransferBill',{data:PAY_BILL.data,name:PAY_BILL.name,mimeType:PAY_BILL.mimeType});
+      if(up&&up.success&&up.data){ data.BillImageUrl=up.data.url; data.BillAmount=PAY_BILL.amount||''; data.BillOcrText=PAY_BILL.text||''; }
+      else { resetBtn(); return toast((up&&up.message)||'Không thể tải bill lên Drive','error'); }
+    } else if(PAY_BILL.existingUrl){ data.BillImageUrl=PAY_BILL.existingUrl; }  // giữ nguyên bill cũ
+
+    const r=await gas(id?'updateFinanceTransaction':'createFinanceTransaction',...(id?[id,data]:[data]));
+    if(r.success){ toast(r.message||'Đã lưu giao dịch'); await afterFinanceChange('transactions'); }
+    else { toast(r.message,'error'); resetBtn(); }
+  }catch(e){ console.warn('[saveFinanceTransaction]', (e && e.message) || String(e));  toast('Lỗi: '+e.message,'error'); resetBtn(); }
+};
+V223_IMPL["confirmCancelFinanceTx__6087"] = async function(id){
+  const t=financeTxById(id);
+  if(!t.TransactionID) return toast('Không tìm thấy giao dịch','error');
+  if(financeIsSystemTx(t)) return financeConfirm({blocked:true,title:'Không thể hủy giao dịch này',subtitle:'Giao dịch sinh từ chứng từ gốc',icon:'lock',
+    message:'Giao dịch này được hệ thống sinh ra từ <b>phiếu thanh toán '+esc(t.SourceID)+'</b>. Hủy tại đây sẽ làm lệch công nợ.<br>Hãy xóa <b>phiếu thanh toán gốc</b> để công nợ và sổ quỹ cùng được cập nhật.',rows:financeTxRows(t)});
+  if(String(t.Status)==='Cancelled') return toast('Giao dịch đã bị hủy trước đó','info');
+  financeConfirm({title:'Xác nhận hủy giao dịch',subtitle:'Số dư tài khoản tiền sẽ được tính lại',icon:'block',tone:'warn',
+    confirmText:'Hủy giao dịch',confirmIcon:'block',cancelText:'Quay lại',
+    message:'Giao dịch sẽ chuyển sang trạng thái <b>Đã hủy</b> và không còn ảnh hưởng tới số dư tài khoản tiền.',
+    rows:financeTxRows(t),
+    onConfirm:async()=>{ toast('Đang hủy giao dịch...','info');
+      const r=await gas('cancelFinanceTransaction',id);
+      if(r.success){ toast(r.message||'Đã hủy giao dịch'); await afterFinanceChange('transactions'); } else toast(r.message,'error'); }});
+};
+V223_IMPL["saveCashAccount__6152"] = async function(id){
+  const btn=$('#btnSaveCashAccount'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="ms text-[18px] animate-spin">progress_activity</span> Đang lưu...'; }
+  const isBank=$('#cashType').value==='Bank';
+  const data={AccountName:$('#cashName').value,AccountType:$('#cashType').value,BankName:$('#cashBank').value,AccountNumber:$('#cashNumber').value,OpeningBalance:financeNum($('#cashOpening').value),IsDefault:$('#cashDefault').checked,Notes:$('#cashNotes').value,Status:'Đang hoạt động',
+    BankCode:isBank?(($('#cashBankCode')||{}).value||''):'',
+    AccountHolder:isBank?(($('#cashHolder')||{}).value||''):'',
+    VietQRUrl:isBank?(($('#cashQrUrl')||{}).value||''):'',
+    QRNoteTemplate:isBank?(($('#cashQrNote')||{}).value||''):''};
+  if(!data.AccountName){ if(btn){ btn.disabled=false; btn.innerHTML='<span class="ms text-[18px]">save</span> Lưu'; } return toast('Nhập tên tài khoản','error'); }
+  try{
+    const r=await gas(id?'updateCashAccount':'createCashAccount',...(id?[id,data]:[data]));
+    if(r.success){ toast(r.message||'Đã lưu tài khoản'); closeModal(); await ensureFinanceData(true); if(STATE.route==='finance') renderFinanceTab('accounts'); }
+    else { toast(r.message,'error'); if(btn){ btn.disabled=false; btn.innerHTML='<span class="ms text-[18px]">save</span> Lưu'; } }
+  }catch(e){ console.warn('[saveCashAccount]', (e && e.message) || String(e));  toast('Lỗi: '+e.message,'error'); if(btn){ btn.disabled=false; btn.innerHTML='<span class="ms text-[18px]">save</span> Lưu'; } }
+};
+V223_IMPL["viewFinanceTransaction__6169"] = async function(id){
+  openModalLoading('Giao dịch '+id,'account_balance',720);
+  // Sử dụng dữ liệu có sẵn trong cache thay vì gọi server để tránh lỗi chưa deploy
+  const txs = (STATE.cache.finance && STATE.cache.finance.financeTransactions) || [];
+  const t = txs.find(function(x){ return String(x.TransactionID) === String(id); }) || {};
+  if(!t.TransactionID){ closeModal(); return toast('Không tìm thấy giao dịch tài chính trong bộ nhớ.','error'); }
+  const isSystem=!!t.SourceType;
+  const dirLabel=t.Direction==='In'?'Thu tiền':(t.Direction==='Out'?'Chi tiền':'Chuyển quỹ');
+  const dirColor=t.Direction==='In'?'bg-emerald-50 text-emerald-600':(t.Direction==='Out'?'bg-rose-50 text-rose-600':'bg-brand-50 text-brand-600');
+  const dirIcon=t.Direction==='In'?'south_west':(t.Direction==='Out'?'north_east':'sync_alt');
+  $('#modalBox').innerHTML=modalShell({title:'Giao dịch '+id, subtitle:dirLabel+' · '+(t.CategoryName||t.TransactionType||''), icon:'account_balance',
+    body:'<div class="space-y-4 fade-in">'
+      +'<div class="flex items-center justify-between text-[13px] mb-4"><span class="text-muted">Ngày giao dịch: <b class="text-ink">'+fmtDate(t.TransactionDate)+'</b></span><div class="flex items-center gap-2">'+badge(dirLabel)+badge(t.Status||'Paid')+'</div></div>'
+      +'<div class="rounded-2xl border border-line overflow-hidden"><table class="w-full text-[13px]"><tbody>'
+      +'<tr class="border-b border-line"><td class="px-4 py-3 text-muted font-medium w-[140px]">Mã giao dịch</td><td class="px-4 py-3 font-semibold text-ink">'+esc(t.TransactionID)+'</td></tr>'
+      +'<tr class="border-b border-line bg-bg/50"><td class="px-4 py-3 text-muted font-medium">Hướng tiền</td><td class="px-4 py-3"><span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[12px] font-semibold '+dirColor+'"><span class="ms text-[16px]">'+dirIcon+'</span>'+dirLabel+'</span></td></tr>'
+      +'<tr class="border-b border-line"><td class="px-4 py-3 text-muted font-medium">Danh mục</td><td class="px-4 py-3 text-ink">'+esc(t.CategoryName||t.TransactionType||'-')+'</td></tr>'
+      +'<tr class="border-b border-line bg-bg/50"><td class="px-4 py-3 text-muted font-medium">Tài khoản</td><td class="px-4 py-3 text-ink">'+esc(t.AccountName||'-')+(t.ToAccountName?' <span class="ms text-[16px] text-muted align-middle">arrow_forward</span> '+esc(t.ToAccountName):'')+'</td></tr>'
+      +'<tr class="border-b border-line"><td class="px-4 py-3 text-muted font-medium">Số tiền</td><td class="px-4 py-3"><b class="text-[18px] '+(t.Direction==='Out'?'text-rose-600':(t.Direction==='In'?'text-emerald-600':'text-brand-600'))+'">'+fmtVND(t.Amount)+'</b></td></tr>'
+      +(t.Method?'<tr class="border-b border-line bg-bg/50"><td class="px-4 py-3 text-muted font-medium">Phương thức</td><td class="px-4 py-3 text-ink">'+esc(t.Method)+'</td></tr>':'')
+      +(t.ObjectName?'<tr class="border-b border-line"><td class="px-4 py-3 text-muted font-medium">Đối tượng</td><td class="px-4 py-3 text-ink">'+esc(t.ObjectName)+(t.ObjectType?' <span class="text-muted text-[11px]">('+esc(t.ObjectType)+')</span>':'')+'</td></tr>':'')
+      +(isSystem?'<tr class="border-b border-line bg-bg/50"><td class="px-4 py-3 text-muted font-medium">Chứng từ gốc</td><td class="px-4 py-3 text-ink"><span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-50 text-amber-700 text-[12px] font-semibold"><span class="ms text-[15px]">link</span>'+esc(t.SourceType)+' · '+esc(t.SourceID)+'</span></td></tr>':'')
+      +'<tr class="'+(t.Notes?'border-b border-line':'')+'"><td class="px-4 py-3 text-muted font-medium">Ghi chú</td><td class="px-4 py-3 text-ink">'+esc(t.Notes||'Không có ghi chú')+'</td></tr>'
+      +'<tr><td class="px-4 py-3 text-muted font-medium">Ngày tạo</td><td class="px-4 py-3 text-[12px] text-muted">'+fmtDate(t.CreatedAt)+(t.UpdatedAt?' · Cập nhật: '+fmtDate(t.UpdatedAt):'')+'</td></tr>'
+      +'</tbody></table></div>'
+      /* Bill chuyển khoản: dùng lại đúng UI billImageCard của phiếu bán/phiếu mua */
+      +(t.BillImageUrl?'<div><h4 class="font-semibold text-ink text-[14px] mb-2 flex items-center gap-2"><span class="ms text-brand-600 text-[18px]">receipt_long</span>Bill chuyển khoản</h4>'
+        +billImageCard({BillImageUrl:t.BillImageUrl,BillAmount:t.BillAmount,Method:t.Method,PaymentDate:t.TransactionDate,PaymentID:t.TransactionID})+'</div>'
+        :(String(t.Method||'')==='Chuyển khoản'?'<div class="rounded-xl border border-dashed border-stroke bg-bg px-4 py-4 text-[13px] text-muted flex items-center gap-2"><span class="ms text-[18px]">receipt_long</span>Giao dịch chuyển khoản này chưa đính kèm bill.</div>':''))
+      +'</div>',
+    footer:(financeIsSystemTx(t)
+        ? '<span class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-50 text-amber-700 text-[12px] font-semibold mr-auto"><span class="ms text-[16px]">lock</span>Sinh từ phiếu thanh toán — chỉ xem</span>'+btnSecondary('Đóng','closeModal()','close')
+        : btnSecondary('Xóa',"confirmDeleteFinanceTx('"+id+"')",'delete')+btnSecondary('Sửa',"openFinanceTransactionModal('"+id+"')",'edit')+btnSecondary('Đóng','closeModal()','close'))
+  });
+};
+V223_IMPL["confirmDeleteFinanceTx__6204"] = async function(id){
+  const t=financeTxById(id);
+  if(!t.TransactionID) return toast('Không tìm thấy giao dịch','error');
+  if(financeIsSystemTx(t)) return financeConfirm({blocked:true,title:'Không thể xóa giao dịch này',subtitle:'Giao dịch sinh từ chứng từ gốc',icon:'lock',
+    message:'Giao dịch này sinh từ <b>phiếu thanh toán '+esc(t.SourceID)+'</b>. Muốn xóa, hãy xóa <b>phiếu thanh toán gốc</b> để công nợ và sổ quỹ cùng được cập nhật.',rows:financeTxRows(t)});
+  financeConfirm({title:'Xác nhận xóa giao dịch tài chính',subtitle:'Hành động này không thể hoàn tác',icon:'delete',
+    confirmText:'Xóa giao dịch',
+    message:'Giao dịch sẽ bị xóa khỏi sổ thu chi và <b>số dư tài khoản tiền sẽ được tính lại</b>. Nếu giao dịch nằm trong kỳ ngân sách, phần đã chi cũng được cập nhật.',
+    rows:financeTxRows(t),
+    onConfirm:async()=>{ toast('Đang xóa giao dịch...','info');
+      const r=await gas('deleteFinanceTransaction',id);
+      if(r.success){ toast(r.message||'Đã xóa giao dịch'); await afterFinanceChange('transactions'); } else toast(r.message,'error'); }});
+};
+V223_IMPL["viewCashAccount__6223"] = async function(id){
+  openModalLoading('Tài khoản '+id,'account_balance_wallet',720);
+  const a=(financeAccounts(false)||[]).find(x=>String(x.AccountID)===String(id))||{};
+  if(!a.AccountID){ closeModal(); return toast('Không tìm thấy tài khoản tiền trong bộ nhớ.','error'); }
+  const meta=financeTypeMeta(a.AccountType);
+  const isDefault=financeBool(a.IsDefault);
+  const led=financeLedgerFor(id);
+  const recent=led.rows.slice(0,8);
+  const txTotal=cashAccountTxCount(id);
+
+  $('#modalBox').innerHTML=modalShell({
+    title:a.AccountName||id,
+    subtitle:meta.label+' · '+(a.AccountID||''),
+    icon:meta.icon,
+    body:'<div class="space-y-4 fade-in">'
+      +'<div class="flex items-center gap-2 flex-wrap">'+badge(a.Status||'Đang hoạt động')+(isDefault?'<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 text-[11px] font-semibold ring-1 ring-amber-200"><span class="ms text-[14px]">star</span>Mặc định</span>':'')+'</div>'
+
+      /* KPI: 1 cột trên mobile, 2 cột từ sm — KHÔNG dùng 4 cột hẹp trong modal */
+      +'<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">'
+      +financeMoneyCard('Số dư hiện tại','<span class="'+(Number(a.CurrentBalance)<0?'text-rose-600':'text-emerald-600')+'">'+fmtVND(a.CurrentBalance)+'</span>',meta.icon,meta.cls,null,fmtVND(a.CurrentBalance))
+      +financeMoneyCard('Số dư đầu kỳ',fmtVND(a.OpeningBalance),'account_balance_wallet','bg-slate-50 text-slate-600',null,fmtVND(a.OpeningBalance))
+      +'</div>'
+
+      +((a.BankName||a.AccountNumber)?'<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">'
+        +financeInfoCard('Ngân hàng',(a.BankName||'')+(a.BankCode?' ('+a.BankCode+')':''),'domain','bg-sky-50 text-sky-600')
+        +financeInfoCard('Số tài khoản',a.AccountNumber,'pin','bg-indigo-50 text-indigo-600')
+        +'</div>':'')
+      +(a.AccountHolder?financeInfoCard('Chủ tài khoản',a.AccountHolder,'badge','bg-emerald-50 text-emerald-600'):'')
+      +cashAccountQrCard(a)
+
+      +(a.Notes?'<div class="rounded-2xl bg-bg border border-line p-4 text-[13px] text-ink break-words"><div class="text-[12px] text-muted font-medium mb-1 flex items-center gap-1.5"><span class="ms text-[16px]">sticky_note_2</span>Ghi chú</div>'+esc(a.Notes)+'</div>':'')
+
+      +'<div class="text-[12px] text-muted">Ngày tạo: '+fmtDate(a.CreatedAt)+(a.UpdatedAt?' · Cập nhật: '+fmtDate(a.UpdatedAt):'')+'</div>'
+
+      +'<div class="pt-1"><div class="flex items-center justify-between gap-3 mb-3"><h4 class="font-semibold text-ink text-[14px] flex items-center gap-2 min-w-0"><span class="ms text-brand-600 text-[18px]">receipt_long</span><span class="truncate">Giao dịch gần đây ('+txTotal+')</span></h4>'
+      +(led.rows.length?'<button onclick="openCashLedger(\''+esc(id)+'\')" class="shrink-0 text-[12px] font-semibold text-brand-600 hover:underline whitespace-nowrap inline-flex items-center gap-1"><span class="ms text-[16px]">list_alt</span>Xem sổ chi tiết</button>':'')
+      +'</div>'
+      +(recent.length?'<div class="rounded-2xl border border-line overflow-hidden overflow-x-auto">'+dataTable([
+        {label:'Ngày',render:r=>fmtDate(r.TransactionDate)},
+        {label:'Diễn giải',render:r=>'<span class="block max-w-[240px] truncate" title="'+esc(r.Description)+'">'+esc(r.Description||'-')+'</span>'},
+        {label:'Hướng',render:r=>{const m=financeDirMeta(r.Direction);return '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold '+m.cls+'"><span class="ms text-[14px]">'+m.icon+'</span>'+m.label+'</span>';}},
+        {label:'Tiền vào',right:true,render:r=>r.MoneyIn?'<b class="text-emerald-600 whitespace-nowrap">'+fmtVND(r.MoneyIn)+'</b>':'<span class="text-muted">-</span>'},
+        {label:'Tiền ra',right:true,render:r=>r.MoneyOut?'<b class="text-rose-600 whitespace-nowrap">'+fmtVND(r.MoneyOut)+'</b>':'<span class="text-muted">-</span>'},
+        {label:'Số dư',right:true,render:r=>'<span class="font-semibold text-ink whitespace-nowrap">'+fmtVND(r.Balance)+'</span>'}
+      ], recent, {onRowClick:'viewFinanceTransaction',idKey:'TransactionID'})+'</div>'
+        :'<div class="rounded-2xl border border-dashed border-stroke bg-bg px-4 py-8 text-center"><span class="ms text-[34px] text-muted">receipt_long</span><div class="text-[13px] text-muted mt-1">Chưa có giao dịch nào liên quan đến tài khoản này</div><div class="text-[11px] text-muted mt-0.5">Tài khoản chưa phát sinh nên có thể xóa được</div></div>')
+      +'</div></div>',
+    footer:btnSecondary('Xóa',"confirmDeleteCashAccount('"+id+"')",'delete')+btnSecondary('Sửa',"openCashAccountModal('"+id+"')",'edit')+btnSecondary('Đóng','closeModal()','close')
+  });
+};
+V223_IMPL["confirmDeleteCashAccount__6311"] = async function(id){
+  const a=(financeAccounts(false)||[]).find(x=>String(x.AccountID)===String(id))||{};
+  if(!a.AccountID) return toast('Không tìm thấy tài khoản tiền','error');
+  const n=cashAccountTxCount(id);
+  const rows=[['Mã tài khoản',a.AccountID],['Tên tài khoản',a.AccountName],['Loại',financeTypeMeta(a.AccountType).label],
+    ['Số dư hiện tại',fmtVND(a.CurrentBalance)],['Số giao dịch liên quan',fmtNum(n)]];
+  if(n>0) return financeConfirm({blocked:true,title:'Không thể xóa tài khoản tiền',subtitle:'Tài khoản đã phát sinh giao dịch',icon:'lock',rows:rows,
+    message:'Tài khoản này đã có <b>'+fmtNum(n)+' giao dịch</b> nên không thể xóa. Bạn có thể chuyển trạng thái sang <b>Ngừng dùng</b> để không còn xuất hiện khi ghi nhận thanh toán.',
+    width:500});
+  financeConfirm({title:'Xác nhận xóa tài khoản tiền',subtitle:'Hành động này không thể hoàn tác',icon:'delete',rows:rows,
+    confirmText:'Xóa tài khoản',
+    message:'Tài khoản tiền sẽ bị xóa khỏi sổ quỹ. Tài khoản này <b>chưa phát sinh giao dịch nào</b> nên số dư và báo cáo tài chính không bị ảnh hưởng.',
+    onConfirm:async()=>{ toast('Đang xóa tài khoản...','info');
+      const r=await gas('deleteCashAccount',id);
+      if(r.success){ toast(r.message||'Đã xóa tài khoản'); await afterFinanceChange('accounts'); } else toast(r.message,'error'); }});
+};
+V223_IMPL["viewBudget__6329"] = async function(id){
+  openModalLoading('Ngân sách '+id,'savings',760);
+  // Sử dụng dữ liệu có sẵn trong cache
+  const budgets = (STATE.cache.finance && STATE.cache.finance.budgets) || [];
+  const b = budgets.find(function(x){ return String(x.BudgetID) === String(id); }) || {};
+  if(!b.BudgetID){ closeModal(); return toast('Không tìm thấy ngân sách trong bộ nhớ.','error'); }
+  const allLines = (STATE.cache.finance && STATE.cache.finance.budgetLines) || [];
+  const lines = allLines.filter(function(l){ return String(l.BudgetID) === String(id); });
+  const pct=Number(b.UsagePercent)||0;
+  const pctColor=pct>100?'bg-rose-500':(pct>80?'bg-amber-500':'bg-emerald-500');
+  const pctTextColor=pct>100?'text-rose-600':(pct>80?'text-amber-600':'text-emerald-600');
+  $('#modalBox').innerHTML=modalShell({title:b.BudgetName||id, subtitle:'Kỳ: '+(b.PeriodKey||'')+(b.StartDate?' · '+fmtDate(b.StartDate)+' - '+fmtDate(b.EndDate):''), icon:'savings',
+    body:'<div class="space-y-4 fade-in">'
+      +'<div class="flex items-center justify-between text-[13px] mb-2"><div class="flex items-center gap-2">'+badge(b.Status||'Active')+'</div></div>'
+      +'<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">'
+      +financeMoneyCard('Tổng ngân sách',fmtVND(b.TotalBudget),'savings','bg-brand-50 text-brand-600',null,fmtVND(b.TotalBudget))
+      +financeMoneyCard('Đã chi',fmtVND(b.ActualSpent),'receipt_long','bg-rose-50 text-rose-600',null,fmtVND(b.ActualSpent))
+      +financeMoneyCard('Còn lại','<span class="'+(Number(b.RemainingBudget)<0?'text-rose-600':'text-emerald-600')+'">'+fmtVND(b.RemainingBudget)+'</span>','account_balance_wallet',Number(b.RemainingBudget)<0?'bg-rose-50 text-rose-600':'bg-emerald-50 text-emerald-600',null,fmtVND(b.RemainingBudget))
+      +financeMoneyCard('Sử dụng','<span class="'+pctTextColor+'">'+fmtNum(pct)+'%</span>','speed',pctColor.replace('-500','-50')+' '+pctTextColor)
+      +'</div>'
+      +'<div class="rounded-xl bg-bg p-3 mb-3"><div class="flex items-center justify-between text-[13px] mb-2"><span class="text-muted font-medium">Tiến độ sử dụng</span><span class="font-bold '+pctTextColor+'">'+fmtNum(pct)+'%</span></div><div class="h-3 rounded-full bg-slate-100 overflow-hidden"><div class="h-full rounded-full '+pctColor+' transition-all" style="width:'+Math.min(100,pct)+'%"></div></div></div>'
+      +(b.Notes?'<div class="rounded-xl bg-bg border border-line p-3 text-[13px] text-ink"><span class="text-muted font-medium">Ghi chú: </span>'+esc(b.Notes)+'</div>':'')
+      +'<div class="mt-2"><h4 class="font-semibold text-ink text-[14px] mb-3 flex items-center gap-2"><span class="ms text-brand-600 text-[18px]">list</span>Chi tiết dòng ngân sách ('+lines.length+')</h4>'
+      +(lines.length?dataTable([
+        {label:'Danh mục',key:'CategoryName'},
+        {label:'Kế hoạch',right:true,render:function(l){return fmtVND(l.PlannedAmount);}},
+        {label:'Thực chi',right:true,render:function(l){return fmtVND(l.ActualAmount);}},
+        {label:'Còn lại',right:true,render:function(l){return '<b class="'+(Number(l.RemainingAmount)<0?'text-rose-600':'text-emerald-600')+'">'+fmtVND(l.RemainingAmount)+'</b>';}},
+        {label:'%',right:true,render:function(l){var p=Number(l.UsagePercent)||0; return '<span class="'+(p>100?'text-rose-600 font-bold':(p>80?'text-amber-600':'text-muted'))+'">'+fmtNum(p)+'%</span>';}},
+        {label:'Trạng thái',render:function(l){return badge(l.Status);}}
+      ], lines):'<div class="rounded-xl border border-dashed border-stroke bg-bg px-4 py-6 text-center text-[13px] text-muted">Ngân sách chưa có dòng chi tiết</div>')
+      +'</div></div>',
+    footer:btnSecondary('Xóa',"confirmDeleteBudget('"+id+"')",'delete')+btnSecondary('Đóng','closeModal()','close')
+  });
+};
+V223_IMPL["confirmDeleteBudget__6364"] = async function(id){
+  const b=((STATE.cache.finance&&STATE.cache.finance.budgets)||[]).find(x=>String(x.BudgetID)===String(id))||{};
+  if(!b.BudgetID) return toast('Không tìm thấy ngân sách','error');
+  const n=((STATE.cache.finance&&STATE.cache.finance.budgetLines)||[]).filter(l=>String(l.BudgetID)===String(id)).length;
+  financeConfirm({title:'Xác nhận xóa ngân sách',subtitle:'Hành động này không thể hoàn tác',icon:'delete',
+    confirmText:'Xóa ngân sách',
+    message:'Ngân sách và <b>'+fmtNum(n)+' dòng chi tiết</b> sẽ bị xóa. Các giao dịch thu/chi đã ghi nhận <b>không</b> bị ảnh hưởng — chỉ mất phần theo dõi hạn mức.',
+    rows:[['Mã ngân sách',b.BudgetID],['Tên ngân sách',b.BudgetName],['Kỳ',b.PeriodKey],['Ngân sách',fmtVND(b.TotalBudget)],['Đã chi',fmtVND(b.ActualSpent)],['Số dòng chi tiết',fmtNum(n)]],
+    onConfirm:async()=>{ toast('Đang xóa ngân sách...','info');
+      const r=await gas('deleteBudgetPlan',id);
+      if(r.success){ toast(r.message||'Đã xóa ngân sách'); await afterFinanceChange('budgets'); } else toast(r.message,'error'); }});
+};
+V223_IMPL["saveBudget__6385"] = async function(){
+  const lines=[];
+  $$('#budgetLines select').forEach((s,i)=>{ const amt=financeNum(($('#budgetAmt'+i)||{}).value); if(s.value&&amt>0) lines.push({CategoryID:s.value,PlannedAmount:amt,AlertThreshold:80}); });
+  const data={BudgetName:$('#budgetName').value,StartDate:$('#budgetStart').value,EndDate:$('#budgetEnd').value,lines};
+  const r=await gas('createBudgetPlan',data);
+  if(r.success){ toast(r.message||'Đã tạo ngân sách'); closeModal(); await ensureFinanceData(true); if(STATE.route==='finance') renderFinanceTab('budgets'); }
+  else toast(r.message,'error');
+};
+V223_IMPL["ftBulkDeleteConfirm__6617"] = async function(key){
+  const st=FT[key]; if(!st) return; const kind=st.opts.bulkKind; const ids=Object.keys(st.selected||{});
+  if(!ids.length) return closeModal();
+  if(SAVING) return; setSaving(true);
+  // 1) Gỡ khỏi giao diện NGAY (optimistic) + đóng popup -> người dùng thấy phản hồi tức thì.
+  const backup = nxRemoveRowsLocal(key, ids);
+  BULK_BAR_KEY=null;
+  const bar=$('#bulkBar'); if(bar) bar.classList.remove('show');
+  closeModal();
+  nxSync('Đang xóa '+ids.length+' mục...');
+  // 2) Máy chủ xử lý ngầm (1 lần gọi theo lô, KHÔNG gọi từng dòng).
+  const r=await gas('bulkDelete', kind, ids);
+  setSaving(false); nxSync('');
+  if(!r.success){
+    // 3) Thất bại -> KHÔI PHỤC nguyên trạng giao diện và báo lỗi rõ ràng.
+    nxRestoreRowsLocal(key, backup);
+    console.error('[bulkDelete]', kind, ids, r);
+    return toast(r.message||'Không xóa được, dữ liệu đã được khôi phục trên màn hình','error');
+  }
+  const d=r.data||{};
+  // 4) Thành công một phần -> nạp lại đúng các bảng bị ảnh hưởng để số liệu khớp Google Sheet.
+  await reprime.apply(null, BULK_INVALIDATE[kind]||[]);
+  render();
+  if(d.failed && d.failed.length){ setTimeout(()=>showBulkFailures(kind, d), 320); }
+  else toast(r.message);
+};
+V223_IMPL["impFileToAoa__7123"] = async function(file){
+  // Bộ đọc Excel nạp ngay lúc này, không nạp sẵn từ đầu (xem napThuVien).
+  await napThuVien('xlsx');
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=function(e){
+      try{
+        const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array',cellDates:true});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const raw=XLSX.utils.sheet_to_json(ws,{header:1,blankrows:false,defval:''});
+        const aoa=(raw||[]).map(r=>(r||[]).map(impCellText)).filter(r=>r.some(c=>String(c).trim()!==''));
+        resolve({aoa:aoa,sheets:wb.SheetNames});
+      }catch(err){ console.warn('[impFileToAoa]', (err && err.message) || String(err));  reject(err); }
+    };
+    reader.onerror=function(){ reject(new Error('Lỗi đọc file')); };
+    reader.readAsArrayBuffer(file);
+  });
+};
+V223_IMPL["impFillColumnPrompt__7344"] = async function(c1,c2){
+  const v=await appDecision_('Điền giá trị cho '+((c2>c1)?(c2-c1+1)+' cột đã chọn':'cả cột')+' (mọi dòng):','');
+  if(v===null) return;
+  for(let c=c1;c<=c2;c++) IMPORT.rows.forEach(row=>row[c]=v);
+  impRebuildBody(); impSetSel({r:0,c:c1},{r:IMPORT.rows.length-1,c:c2});
+};
+V223_IMPL["impSubmit__7714"] = async function(){
+  impValidate();
+  const d=impDef();
+  if(IMPORT._missingRequiredCols&&IMPORT._missingRequiredCols.length) return toast('Hãy ghép đủ cột bắt buộc: '+IMPORT._missingRequiredCols.map(k=>impFieldLabel(k).replace(' *','')).join(', '),'error');
+  if(IMPORT._reqCol<0 && IMPORT._altCol<0) return toast('Hãy chọn 1 cột làm "'+impFieldLabel(d.req).replace(' *','')+'"','error');
+  IMP_TAXO_DROPPED=0;
+  const payload=impBuildPayload();
+  if(!payload.rows.length) return toast(d.key==='product'
+    ?'Không có dòng hợp lệ. Hãy điền đủ Tên sản phẩm, Mã hàng và Brand/Vật liệu; Phân loại có thể để trống.'
+    :'Không có dòng hợp lệ để nhập','error');
+  const taxoNote=IMP_TAXO_DROPPED?(' · bỏ trống '+IMP_TAXO_DROPPED+' ô Nhóm hàng/ĐVT lạ so với danh mục'):'';
+  if(SAVING) return; setSaving(true);
+  try{
+    const res=await impSendChunked(d,payload,(done,total,note)=>{
+      toast(note?('Lô '+done+'/'+total+': '+note):('Đang nhập '+done+'/'+total+' '+d.unit+'...'),note?'info':'info');
+    });
+    setSaving(false);
+    if(res.ok){
+      toast(res.message+taxoNote);
+      closeModal();
+      await reprime.apply(null,d.reprime);
+      render();
+    } else toast(res.message||'Nhập thất bại','error');
+  }catch(e){ console.warn('[impSubmit]', (e && e.message) || String(e));  setSaving(false); toast('Nhập thất bại: '+(e.message||e),'error'); }
+};
+V223_IMPL["impSendChunked__7751"] = async function(def,payload,onProgress){
+  const rows=payload.rows||[], size=def.chunk||300;
+  let created=0,updated=0,skipped=0; const warns=[];
+  const idField=def.key==='sales'?'SalesID':(def.key==='purchase'?'PurchaseID':(def.key==='quote'?'QuoteID':null));
+  for(let i=0;i<rows.length;i+=size){
+    const part=rows.slice(i,i+size);
+    const body=Object.assign({},payload,{rows:part});
+    if(payload.items&&idField){
+      const ids={}; part.forEach(h=>{ ids[String(h.__ref||h[idField]||'').toLowerCase()]=true; });
+      body.items=payload.items.filter(it=>ids[String(it[idField]||'').toLowerCase()]);
+    }
+    if(onProgress) onProgress(Math.min(i+size,rows.length),rows.length);
+    // Thử tối đa 4 lần cho mỗi lô: server chống trùng nên gửi lại lô đã (lỡ) nhập xong
+    // chỉ bị "bỏ qua N dòng trùng" chứ không nhân đôi dữ liệu.
+    let r=null;
+    for(let attempt=1;attempt<=4;attempt++){
+      r=await gas(def.fn,body);
+      if(r&&r.success) break;
+      if(attempt===4||!impRetryable(r)) return {ok:false,message:(r&&r.message)||'Lỗi khi nhập lô '+(Math.floor(i/size)+1)};
+      const wait=attempt*20000; // 20s/40s/60s — đợi server nhả khóa của lô đang chạy dở
+      if(onProgress) onProgress(Math.min(i+size,rows.length),rows.length,'gặp lỗi tạm thời, tự thử lại sau '+(wait/1000)+'s (lần '+(attempt+1)+'/4)...');
+      await impSleep(wait);
+    }
+    const dta=r.data||{};
+    created+=dta.created||0; updated+=dta.updated||0; skipped+=dta.skipped||0;
+    (dta.warnings||[]).forEach(w=>{ if(warns.indexOf(w)<0) warns.push(w); });
+  }
+  const msg='Đã nhập '+created+' '+def.unit+(updated?', cập nhật '+updated:'')+(skipped?', bỏ qua '+skipped:'')
+    +(warns.length?' · '+warns.join(' · '):'');
+  return {ok:true,message:msg,created:created,updated:updated,skipped:skipped,warnings:warns};
+};
+V223_IMPL["bimpAddFiles__7815"] = async function(fileList){
+  const files=[].slice.call(fileList);
+  toast('Đang đọc '+files.length+' file...','info');
+  for(const f of files){
+    try{
+      const r=await impFileToAoa(f);
+      if(!r.aoa.length){ toast('File "'+f.name+'" không có dữ liệu','error'); continue; }
+      let kind=impDetectKind(r.aoa[0].concat(r.aoa[1]||[]).concat((r.aoa[4]||[])));
+      const st=impParseStatement(r.aoa);
+      if(st){
+        // Bảng kê công nợ chi tiết = 2 phần dữ liệu trong 1 file:
+        // chứng từ (kèm dòng hàng) + các lần thanh toán -> tách thành 2 mục nhập.
+        const ordKind=st.isSupplier?'purchase':'sales';
+        const convO=impMaybeConvertStatement(r.aoa,ordKind);
+        const convP=impMaybeConvertStatement(r.aoa,'payment');
+        if(convO) BATCH.files.push({name:f.name+' — chứng từ',aoa:convO.aoa,kind:ordKind,forceHeader:true,note:convO.message,status:'ready',message:''});
+        if(convP) BATCH.files.push({name:f.name+' — thanh toán',aoa:convP.aoa,kind:'payment',forceHeader:true,note:convP.message,status:'ready',message:''});
+        if(!convO&&!convP) toast('Bỏ qua "'+f.name+'": bảng kê của '+(st.name||st.code)+' không có giao dịch trong kỳ — số nợ của họ đã nằm trong file khách hàng/NCC nên không mất dữ liệu','info');
+        continue;
+      }
+      BATCH.files.push({name:f.name,aoa:r.aoa,kind:kind,forceHeader:false,note:'',status:'ready',message:''});
+    }catch(err){ console.warn('[bimpAddFiles]', (err && err.message) || String(err));  toast('Không đọc được "'+f.name+'": '+(err.message||err),'error'); }
+  }
+  bimpRenderOpts(); bimpRenderList();
+};
+V223_IMPL["bimpRun__7901"] = async function(){
+  if(!BATCH||!BATCH.files.length) return toast('Chưa có file nào để nhập','error');
+  if(BATCH.running) return;
+  if(SAVING) return toast('Đang có thao tác khác chạy, thử lại sau','info');
+  BATCH.running=true; setSaving(true);
+  const btn=$('#bimpRun'); if(btn){ btn.disabled=true; btn.classList.add('opacity-60'); }
+  const order=BATCH.files.map((f,i)=>({f:f,i:i})).sort((a,b)=>{const d=BATCH_ORDER.indexOf(a.f.kind)-BATCH_ORDER.indexOf(b.f.kind); if(d) return d; /* Cùng loại: bảng kê (có dòng hàng) đi TRƯỚC file danh sách chỉ có phần đầu — hóa đơn được tạo bản đầy đủ, bản thiếu gặp trùng mã sẽ tự bị bỏ qua */ return (b.f.forceHeader?1:0)-(a.f.forceHeader?1:0); });
+  let okCount=0,failCount=0; const lines=[];
+  for(let n=0;n<order.length;n++){
+    const f=order[n].f, def=IMPORT_DEFS[f.kind];
+    // Chạy lại sau khi có mục lỗi: mục đã xong/đã bỏ qua giữ nguyên, chỉ xử lý mục lỗi & mục chưa chạy.
+    if(f.status==='ok'||f.status==='skip'){ lines.push('<div class="text-[12px] text-muted">• '+esc(f.name)+': đã nhập ở lượt trước, bỏ qua</div>'); continue; }
+    f.status='running'; f.message=''; bimpRenderList();
+    bimpLog('<div class="text-[12.5px] text-muted">Đang xử lý '+(n+1)+'/'+order.length+': <b>'+esc(f.name)+'</b> ('+esc(def.label)+')...</div>');
+    try{
+      const built=impPayloadFromAoa(f.kind,f.aoa,BATCH.opts,f.forceHeader);
+      if(!built.ok){ f.status='fail'; f.message='Không nhận ra cột "'+built.reqLabel.replace(' *','')+'" — hãy nhập riêng file này để ghép cột tay'; failCount++; bimpRenderList(); continue; }
+      if(!built.payload.rows.length){ f.status='skip'; f.message='Không có dòng mới'; bimpRenderList(); continue; }
+      const res=await impSendChunked(def,built.payload,(done,total,note)=>{
+        bimpLog('<div class="text-[12.5px] text-muted">Đang xử lý '+(n+1)+'/'+order.length+': <b>'+esc(f.name)+'</b> — '+done+'/'+total+' dòng'+(note?' · <span class="text-amber-600">'+esc(note)+'</span>':'')+'</div>');
+      });
+      if(res.ok){ f.status='ok'; f.message=res.message; okCount++; }
+      else { f.status='fail'; f.message=res.message; failCount++; }
+    }catch(e){ console.warn('[bimpRun]', (e && e.message) || String(e));  f.status='fail'; f.message=e.message||String(e); failCount++; }
+    lines.push('<div class="text-[12px] '+(f.status==='ok'?'text-emerald-700':'text-rose-700')+'">• '+esc(f.name)+': '+esc(f.message||'')+'</div>');
+    bimpRenderList();
+    // Làm mới danh mục nền để file sau tra được dữ liệu file trước vừa tạo
+    if(f.kind==='product'||f.kind==='customer'||f.kind==='supplier'){ try{ await reprime.apply(null,def.reprime); }catch(_){ console.warn('[bimpRun]', (_ && _.message) || String(_)); }
+    }
+  }
+  // ---- Bước cuối: cân đối công nợ ----
+  // File khách hàng/NCC ghi "Nợ cần thu HIỆN TẠI" — số này đã bao gồm nợ của các hóa đơn
+  // chưa thu trong file hóa đơn. Nhập cả hai mà không cân đối thì công nợ bị cộng hai lần.
+  // Vì vậy chạy lại một lượt: nợ cũ = số dư mục tiêu − công nợ đang treo trên chứng từ.
+  const hadOrders=order.some(o=>(o.f.kind==='sales'||o.f.kind==='purchase')&&o.f.status==='ok');
+  if(hadOrders){
+    for(const side of [{kind:'customer',type:'Customer',label:'khách hàng'},{kind:'supplier',type:'Supplier',label:'nhà cung cấp'}]){
+      const src=order.filter(o=>o.f.kind===side.kind&&o.f.status==='ok');
+      if(!src.length) continue;
+      const rows=[];
+      src.forEach(o=>{
+        const b=impPayloadFromAoa(side.kind,o.f.aoa,BATCH.opts,o.f.forceHeader);
+        (b.payload.rows||[]).forEach(r=>{
+          if(r.OpeningDebt===undefined) return;
+          rows.push({Code:r[side.kind==='customer'?'CustomerID':'SupplierID']||'',
+            Name:r[side.kind==='customer'?'CustomerName':'SupplierName']||'',
+            Phone:r.Phone||'', Amount:r.OpeningDebt, ObjectType:side.type});
+        });
+      });
+      if(!rows.length) continue;
+      bimpLog('<div class="text-[12.5px] text-muted">Đang cân đối công nợ '+side.label+'...</div>');
+      try{
+        const res=await impSendChunked(IMPORT_DEFS.debt,{rows:rows,mode:'balance',defaultType:side.type,createMissingParty:false},null);
+        lines.push('<div class="text-[12px] '+(res.ok?'text-emerald-700':'text-rose-700')+'">• Cân đối công nợ '+side.label+': '+esc(res.message||'')+'</div>');
+      }catch(e){ console.warn('[bimpRun]', (e && e.message) || String(e));  lines.push('<div class="text-[12px] text-rose-700">• Cân đối công nợ '+side.label+' lỗi: '+esc(e.message||e)+'</div>'); }
+    }
+  }
+  // Còn mục lỗi -> chưa coi là xong: đóng/mở lại cửa sổ vẫn giữ nguyên danh sách để chạy tiếp,
+  // và nút chuyển thành "Chạy lại mục lỗi" (mục đã xong sẽ được bỏ qua).
+  BATCH.running=false; BATCH.done=(failCount===0); setSaving(false);
+  if(btn){
+    btn.disabled=false; btn.classList.remove('opacity-60');
+    if(failCount) btn.innerHTML='<span class="ms text-[18px]">refresh</span>Chạy lại '+failCount+' mục lỗi';
+  }
+  try{ await prefetchAll(); }catch(_){ console.warn('[bimpRun]', (_ && _.message) || String(_)); }
+  bimpLog('<div class="rounded-xl border border-stroke bg-bg px-3 py-2.5">'
+    +'<div class="text-[13px] font-semibold text-ink mb-1">Hoàn tất: '+okCount+' file thành công'+(failCount?', '+failCount+' file lỗi — bấm "Chạy lại mục lỗi", các mục đã xong sẽ tự bỏ qua':'')+'</div>'
+    +lines.join('')+'</div>');
+  toast(failCount?('Nhập xong, '+failCount+' file có lỗi — bấm nút để chạy lại riêng các mục đó'):'Đã nhập xong toàn bộ dữ liệu', failCount?'error':'success');
+  bimpRenderList();
+  render();
+};
+V223_IMPL["openingDebtLoad__8052"] = async function(kind, id, inputId){
+  if(!id) return;
+  try{
+    await load(kind === 'customer' ? 'sales' : 'purchases',
+               kind === 'customer' ? 'getSalesOrders' : 'getPurchaseOrders');
+    const el = document.getElementById(inputId);
+    if(el && !el.dataset.touched) el.value = fmtNum(openingDebtOf(kind, id));
+  }catch(e){ console.warn('[openingDebtLoad]', (e && e.message) || String(e)); }
+};
+V223_IMPL["saveCustomer__8062"] = async function(id){
+  const data={CustomerName:$('#cName').value,Phone:$('#cPhone').value,Email:$('#cEmail').value,Address:$('#cAddr').value,CustomerGroup:$('#cGroup').value,Status:$('#cStatus').value,Notes:$('#cNotes').value};
+  if(!data.CustomerName) return toast('Nhập tên khách hàng','error');
+  if(SAVING)return; setSaving(true);
+  const r=id ? await gas('updateCustomer',id,data) : await gas('createCustomer',data);
+  if(r.success){
+    const customerId=id || ((r.data||{}).CustomerID);
+    const debt=moneyVal('cOpeningDebt');
+    if(customerId && $('#cOpeningDebt')) await gas('setCustomerOpeningDebt', customerId, debt, 'Ghi nhận nợ cũ đầu kỳ');
+  }
+  setSaving(false);
+  if(r.success){toast(r.message);closeModal();await reprime('customers','sales','debt');render();}else toast(r.message,'error');
+};
+V223_IMPL["openSalesModal__8540"] = async function(id){
+  const preparing=!!id || !STATE.cache.products || !STATE.cache.customers || !financeModalReady();
+  if(preparing) openModalLoading(id?'Đang tải phiếu bán...':'Tạo phiếu bán hàng','sell',760);
+  const seq=preparing?MODAL_SEQ:0;
+  await Promise.all([load('products','getProducts'),load('customers','getCustomers'),whLoad().catch(()=>[]),ensureFinanceModalData().catch(()=>null)]);
+  if(seq&&(!MODAL_OPEN||MODAL_SEQ!==seq)) return;
+  LINE_PRICE_MODE='sale'; LINE_STOCK_MODE='out'; LINE_PICK_LOCKED=false; LINE_ITEMS=[]; LINE_VAT_DOC=true;
+  let order=null, detail=null;
+  if(id){ const r=await detailGet('getSalesDetail',id); if(!r.success) return toast(r.message,'error'); detail=r.data||{}; order=detail.order||{}; if(isCancelled_(order.Status)) return toast('Không thể sửa hóa đơn đã hủy','error'); LINE_ITEMS=(detail.items||[]).map(it=>({ProductID:it.ProductID,Quantity:Number(it.Quantity)||1,price:Number(it.SalePrice)||0,_originalQty:Number(it.Quantity)||0})); }
+  const selCus=(order&&order.CustomerID)||'';
+  const taxBase=order?(Number(order.Subtotal||0)-Number(order.Discount||0)):0;
+  const soVatPct=order?(taxBase>0?Math.round(Number(order.VAT||0)/taxBase*100):0):defaultVat();
+  openModal(modalShell({title:id?'Sửa phiếu bán '+id:'Tạo phiếu bán hàng', subtitle:'Xuất kho, ghi nhận doanh thu và công nợ', icon:'sell',
+    body:'<input type="hidden" id="soId" value="'+esc(id||'')+'"/>'
+      +field('Khách hàng *', entityPicker({id:'soCustomer',kind:'customer',value:selCus}))
+      +row2(field('Ngày bán', inp('soDate','','datetime-local',order&&order.SalesDate?window.localDateTime(order.SalesDate):window.localDateTime(Date.now()))),field('Hạn thanh toán', inp('soDue','','date',order&&order.DueDate?String(order.DueDate).slice(0,10):'')))
+      +whField('soWarehouse', order&&order.WarehouseID, 'Xuất từ kho', 'Hàng sẽ trừ tồn của kho này')
+      +invoiceFields('so', order)
+      +'<div id="lineVatBar">'+vatLineToggle('so')+'</div>'
+      +linePicker('Sản phẩm')
+      +row3(field('VAT (%)', inp('soVat','','number',soVatPct),'Để 0 nếu không xuất VAT'),field('Phí vận chuyển (đ)', moneyInp('soShip',order&&order.ShippingFee||0)),field('Chiết khấu', discountControl('so',order&&order.Discount||0),'Chọn giảm theo số tiền hoặc phần trăm tạm tính'))
+      +'<div class="mb-4">'
+        +'<label class="block text-[13px] font-medium text-ink mb-1.5">Đã thanh toán (đ)</label>'
+        +paidControl('so',order&&order.PaidAmount||0)
+        +paidPayZone('so','SalesOrder',(order&&order.Method)||'Tiền mặt')
+      +'</div>'
+      +field('Ghi chú', inp('soNotes',order&&order.Notes||''))
+      +discountSummary('so'),
+    footer:btnSecondary('Huỷ','closeModal()','close')+btnPrimary(id?'Lưu thay đổi':'Tạo phiếu bán','saveSales()','save')}), 760);
+  PAY_BILL={data:'',name:'',mimeType:'',amount:0,text:'',uploadUrl:'',maxAmount:0};
+  initPayBillToggle('soMethod');
+  payAccountSync('soMethod','soAccount');
+  paidZoneSync('so');
+  if(id) refreshLines();
+};
+V223_IMPL["pickerQuickSave__8672"] = async function(id){
+  const hid=$('#'+id); if(!hid) return;
+  const kind=hid.dataset.kind, isCust=kind==='customer';
+  const name=($('#'+id+'QuickName')||{}).value||'';
+  if(!name.trim()) return toast(isCust?'Nhập tên khách hàng':'Nhập tên nhà cung cấp','error');
+  
+  const payload=isCust
+    ? {CustomerName:name,Phone:($('#'+id+'QuickPhone')||{}).value||'',Email:($('#'+id+'QuickEmail')||{}).value||'',CustomerGroup:($('#'+id+'QuickGroup')||{}).value||'Khách lẻ'}
+    : {SupplierName:name,Phone:($('#'+id+'QuickPhone')||{}).value||'',Email:($('#'+id+'QuickEmail')||{}).value||'',Category:($('#'+id+'QuickGroup')||{}).value||'Nguyên liệu'};
+  
+  toast('Đang tạo '+(isCust?'khách hàng':'nhà cung cấp')+'...','info');
+  if(SAVING) return; setSaving(true);
+  
+  const r=await gas(isCust?'createCustomer':'createSupplier', payload);
+  
+  const openingDebt = moneyVal(id+'QuickDebt');
+  if (r.success && r.data && openingDebt > 0) {
+      const newId = r.data[isCust?'CustomerID':'SupplierID'];
+      await gas(isCust?'setCustomerOpeningDebt':'setSupplierOpeningDebt', newId, openingDebt, 'Ghi nhận nợ cũ đầu kỳ');
+  }
+
+  setSaving(false);
+  if(!r.success) return toast(r.message,'error');
+  
+  await reprime(isCust?'customers':'suppliers', isCust?'sales':'purchases', 'debt');
+  const newId=(r.data||{})[isCust?'CustomerID':'SupplierID'];
+  pickerPick(id,newId);
+  toast(r.message||'Đã tạo mới');
+};
+V223_IMPL["saveSales__8718"] = async function(){
+  if(!LINE_ITEMS.length) return toast('Thêm ít nhất 1 sản phẩm','error');
+  if(!validateLineItems(true)) return;
+  const id=($('#soId')||{}).value||'';
+  if(!$('#soCustomer').value) return toast('Chọn khách hàng','error');
+  const paid=moneyVal('soPaid');
+  const method=($('#soMethod')||{}).value||'Tiền mặt';
+  const accId=($('#soAccount')||{}).value||'';
+  if(paid>0 && !accId) return toast('Chọn tài khoản nhận tiền','error');
+  const data={CustomerID:$('#soCustomer').value,SalesDate:$('#soDate').value,DueDate:$('#soDue').value,WarehouseID:whVal('soWarehouse'),
+    Discount:discountAmount('so', LINE_ITEMS.reduce((s,l)=>s+(Number(l.Quantity)||0)*(Number(l.price)||0),0)),VATPercent:Number($('#soVat').value)||0,ShippingFee:moneyVal('soShip'),PaidAmount:paid,Method:method,Notes:$('#soNotes').value,
+    AccountID:paid>0?accId:'',
+    items:vatItemsPayload(LINE_ITEMS.map(l=>({ProductID:l.ProductID,Quantity:l.Quantity,SalePrice:l.price})))};
+  Object.assign(data, invoicePayload('so'));
+  if(!(await vatWarnDuplicate('SalesOrders','so',id))) return;
+  if(SAVING)return; setSaving(true);
+  // Chuyển khoản + có bill + có thanh toán -> tải bill lên Drive và đính kèm vào phiếu thu
+  if(method==='Chuyển khoản' && PAY_BILL.data && paid>0){
+    toast('Đang tải bill chuyển khoản lên Drive...','info');
+    const up=await gas('uploadTransferBill',{data:PAY_BILL.data,name:PAY_BILL.name,mimeType:PAY_BILL.mimeType});
+    if(up&&up.success&&up.data){ data.BillImageUrl=up.data.url; data.BillAmount=PAY_BILL.amount||''; data.BillOcrText=PAY_BILL.text||''; }
+    else { setSaving(false); return toast((up&&up.message)||'Không thể tải bill lên Drive','error'); }
+  }
+  toast(id?'Đang cập nhật...':'Đang tạo...','info');
+  const r=id ? await gas('updateSalesOrder',id,data) : await gas('createSalesOrder',data); setSaving(false);
+  if(r.success){toast(r.message);closeModal();await reprime('sales','products','movements','customers');delete STATE.cache.finance;render();}else toast(r.message,'error');
+};
+V223_IMPL["openQuoteModal__8889"] = async function(id){
+  const preparing=!!id || !STATE.cache.products || !STATE.cache.customers;
+  if(preparing) openModalLoading(id?'Đang tải báo giá...':'Tạo báo giá','request_quote',620);
+  const seq=preparing?MODAL_SEQ:0;
+  await Promise.all([load('products','getProducts'),load('customers','getCustomers')]);
+  if(seq&&(!MODAL_OPEN||MODAL_SEQ!==seq)) return;
+  LINE_PRICE_MODE='sale'; LINE_STOCK_MODE='quote'; LINE_PICK_LOCKED=false; LINE_ITEMS=[]; LINE_VAT_DOC=true;
+  let order=null;
+  if(id){ const r=await detailGet('getQuoteDetail',id); if(!r.success) return toast(r.message,'error'); order=(r.data&&r.data.quote)||{}; if(order.Status==='Đã chuyển HĐ') return toast('Báo giá đã chuyển thành hóa đơn, không thể sửa','error'); LINE_ITEMS=((r.data&&r.data.items)||[]).map(it=>({ProductID:it.ProductID,Quantity:Number(it.Quantity)||1,price:Number(it.SalePrice)||0,_originalQty:0})); }
+  const selCus=(order&&order.CustomerID)||'';
+  const taxBase=order?(Number(order.Subtotal||0)-Number(order.Discount||0)):0;
+  const qVatPct=order?(taxBase>0?Math.round(Number(order.VAT||0)/taxBase*100):0):defaultVat();
+  openModal(modalShell({title:id?'Sửa báo giá '+id:'Tạo báo giá', subtitle:'Báo giá cho khách hàng, có thể chuyển thành hóa đơn', icon:'request_quote',
+    body:'<input type="hidden" id="qId" value="'+esc(id||'')+'"/>'
+      +field('Khách hàng *', entityPicker({id:'qCustomer',kind:'customer',value:selCus}))
+      +row2(field('Ngày báo giá', inp('qDate','','datetime-local',order&&order.QuoteDate?window.localDateTime(order.QuoteDate):window.localDateTime(Date.now()))),field('Ngày hết hạn', inp('qExp','','date',order&&order.ExpiredDate?String(order.ExpiredDate).slice(0,10):'')))
+      +linePicker('Sản phẩm')
+      +row2(field('VAT (%)', inp('qVat','','number',qVatPct),'Để 0 nếu không xuất VAT'),field('Chiết khấu', discountControl('q',order&&order.Discount||0),'Chọn giảm theo số tiền hoặc phần trăm tạm tính'))
+      +field('Ghi chú', inp('qNotes',order&&order.Notes||''))
+      +discountSummary('q'),
+    footer:btnSecondary('Huỷ','closeModal()','close')+btnPrimary(id?'Lưu thay đổi':'Tạo báo giá','saveQuote()','save')}));
+  if(id) refreshLines();
+};
+V223_IMPL["saveQuote__8912"] = async function(){
+  if(!LINE_ITEMS.length) return toast('Thêm ít nhất 1 sản phẩm','error');
+  const invalid=LINE_ITEMS.find(l=>(Number(l.Quantity)||0)<=0 || (Number(l.price)||0)<0);
+  if(invalid) return toast('Số lượng phải lớn hơn 0 và đơn giá không được âm','error');
+  if(!$('#qCustomer').value) return toast('Chọn khách hàng','error');
+  const id=($('#qId')||{}).value||'';
+  const data={CustomerID:$('#qCustomer').value,QuoteDate:$('#qDate').value,ExpiredDate:$('#qExp').value,Discount:discountAmount('q', LINE_ITEMS.reduce((s,l)=>s+(Number(l.Quantity)||0)*(Number(l.price)||0),0)),VATPercent:Number($('#qVat').value)||0,Notes:$('#qNotes').value,
+    items:vatItemsPayload(LINE_ITEMS.map(l=>({ProductID:l.ProductID,Quantity:l.Quantity,SalePrice:l.price})))};
+  toast(id?'Đang cập nhật...':'Đang tạo...','info');
+  if(SAVING)return; setSaving(true);
+  const r=id ? await gas('updateQuote',id,data) : await gas('createQuote',data); setSaving(false);
+  if(r.success){toast(r.message);closeModal();await reprime('quotes');render();}else toast(r.message,'error');
+};
+V223_IMPL["convertQuote__8926"] = async function(id){
+  if(BUSY['cq'+id]) return; BUSY['cq'+id]=true;
+  toast('Đang chuyển...','info');
+  try{
+    const r=await gas('convertQuoteToSalesOrder',id);
+    if(r.success){toast('Đã chuyển thành hóa đơn');await reprime('quotes','sales','products','movements','customers');render();}else toast(r.message,'error');
+  } finally { delete BUSY['cq'+id]; }
+};
+V223_IMPL["viewQuote__8934"] = async function(id){
+  openModalLoading('Báo giá '+id,'request_quote',720);
+  const r=await detailGet('getQuoteDetail',id);
+  if(!r.success){ closeModal(); return toast(r.message,'error'); }
+  const o=r.data.quote||{}; const items=r.data.items||[];
+  const converted=o.Status==='Đã chuyển HĐ';
+  $('#modalBox').innerHTML=modalShell({title:'Báo giá '+id, subtitle:o.CustomerName||'', icon:'request_quote',
+    body:'<div class="flex items-center justify-between text-[13px] mb-4"><span class="text-muted">Ngày báo giá: <b class="text-ink">'+fmtDate(o.QuoteDate)+'</b> · Hết hạn: <b class="text-ink">'+fmtDate(o.ExpiredDate)+'</b></span>'+badge(o.Status||'Mới')+'</div>'
+      +detailItemsTable([{label:'Sản phẩm',key:'ProductName'},{label:'SL',right:true,key:'Quantity'},{label:'Đơn giá',right:true,render:r=>fmtVND(r.SalePrice)},{label:'Thành tiền',right:true,render:r=>fmtVND((Number(r.Quantity)||0)*(Number(r.SalePrice)||0))}], items)
+      +detailTotals([['Tạm tính',fmtVND(o.Subtotal),'text-ink'],['Chiết khấu','-'+fmtVND(o.Discount),'text-rose-600'],['VAT',fmtVND(o.VAT),'text-emerald-600'],['Tổng cộng',fmtVND(o.TotalAmount),'font-bold text-ink text-[16px]']]),
+    footer:(converted?'':'<button onclick="confirmDelete(\'quote\',\''+id+'\')" class="text-rose-600 px-3 py-2.5 rounded-xl text-[13px] font-medium hover:bg-rose-50 flex items-center gap-1 mr-auto"><span class="ms text-[18px]">delete</span>Xóa</button>')+(converted?'':btnSecondary('Sửa','closeModal();openQuoteModal(\''+id+'\')','edit'))+btnSecondary('In / Gửi chứng từ','openDocModal(\'quote\',\''+id+'\')','print')+(converted?'<span class="px-3 py-2 text-[13px] text-emerald-600 font-semibold flex items-center gap-1"><span class="ms text-[18px]">check_circle</span>Đã chuyển hóa đơn</span>':btnPrimary('Chuyển thành hóa đơn','closeModal();convertQuote(\''+id+'\')','sync_alt'))});
+};
+V223_IMPL["openPaymentModal__9078"] = async function(sourceType,sourceId,maxAmt){
+  PAY_BILL={data:'',name:'',mimeType:'',amount:0,text:'',uploadUrl:'',maxAmount:Number(maxAmt)||0};
+  try{ await ensureFinanceData(); }catch(e){ console.warn('[openPaymentModal]', (e && e.message) || String(e)); }   // cần danh sách tài khoản tiền trước khi dựng form
+  openModal(modalShell({title:sourceType==='SalesOrder'?'Thu nợ khách hàng':'Thanh toán nhà cung cấp', subtitle:'Chứng từ: '+sourceId, icon:'payments',
+    body:'<div class="bg-bg rounded-xl px-4 py-3 mb-4 flex justify-between items-center"><span class="text-muted text-[13px]">Còn nợ</span><span id="payRemain" class="font-bold text-rose-600 text-[16px]">'+fmtVND(maxAmt)+'</span></div>'
+      +'<p id="payRemainNote" class="hidden -mt-2 mb-3 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2"></p>'
+      +field('Số tiền *', moneyInp('payAmt',maxAmt))
+      +field('Phương thức', sel('payMethod',['Tiền mặt','Chuyển khoản','Thẻ']).replace('<select','<select onchange="payMethodChanged();payAccountSync(\'payMethod\',\'payAccount\')"'))
+      +payAccountField(sourceType,'payMethod','payAccount')
+      +'<div id="payBillWrap" class="bill-reveal">'+transferBillBox()+'</div>'
+      +field('Ngày', inp('payDate','','datetime-local',window.localDateTime(Date.now())))
+      +field('Ghi chú', inp('payNote')),
+    footer:btnSecondary('Huỷ','closeModal()','close')+btnPrimary('Ghi nhận','savePayment(\''+sourceType+'\',\''+sourceId+'\')','check')}));
+  initPayBillToggle('payMethod');
+  payAccountSync('payMethod','payAccount');
+  payRefreshRemaining(sourceType, sourceId, Number(maxAmt) || 0);
+};
+V223_IMPL["payRefreshRemaining__9099"] = async function(sourceType, sourceId, shown) {
+  try {
+    const fn = sourceType === 'SalesOrder' ? 'getSalesDetail' : 'getPurchaseDetail';
+    const r = await gas(fn, sourceId);
+    if (!r || !r.success || !r.data || !r.data.order) return;
+    const o = r.data.order;
+    const real = Number(sourceType === 'SalesOrder' ? o.ReceivableAmount : o.PayableAmount) || 0;
+    if (Math.abs(real - shown) < 0.5) return;
+    const box = document.getElementById('payRemain');
+    const inp = document.getElementById('payAmt');
+    if (!box || !inp) return;
+    box.textContent = fmtVND(real);
+    inp.value = real > 0 ? nfFormat(real, false) : '';
+    if (typeof PAY_BILL === 'object' && PAY_BILL) PAY_BILL.maxAmount = real;
+    const note = document.getElementById('payRemainNote');
+    if (note) {
+      note.textContent = real > 0
+        ? 'Số còn nợ vừa được cập nhật theo dữ liệu mới nhất.'
+        : 'Chứng từ này đã được thu đủ, không còn nợ.';
+      note.classList.remove('hidden');
+    }
+  } catch (e) { console.warn('[payRefreshRemaining]', (e && e.message) || String(e));  }
+};
+V223_IMPL["payBillOcr__9227"] = async function(data){
+  const box=$('#payBillResult'); if(box) box.innerHTML='<span class="inline-flex items-center gap-2 text-brand-600 animate-pulse"><span class="ms text-[17px]">document_scanner</span>Đang nhận dạng số tiền trên bill...</span>';
+  try{
+    // Bộ đọc chữ từ ảnh rất nặng, chỉ nạp khi thật sự bấm vào chức năng này.
+    // Nạp hỏng thì phải nói rõ, đừng để dòng "Đang nhận dạng..." treo mãi.
+    if(!await napThuVienCoBao('ocr', 'bộ đọc chữ từ ảnh')){
+      if(box) box.innerHTML='<div class="text-rose-600">Không tải được bộ đọc chữ từ ảnh. Kiểm tra kết nối mạng rồi thử lại, hoặc nhập số tiền thủ công.</div>';
+      return;
+    }
+    const r=await Tesseract.recognize(data,'vie+eng');
+    const text=(r&&r.data&&r.data.text)||'';
+    const amount=extractTransferAmount(text);
+    PAY_BILL.text=text; PAY_BILL.amount=amount;
+    if(amount>0){
+      const max=Number(PAY_BILL.maxAmount)||0, over=max>0 && amount>max;
+      if(box) box.innerHTML='<div class="flex items-center justify-between gap-3"><div><div class="text-[12px] text-muted">Số tiền nhận dạng</div><div class="text-[18px] font-bold '+(over?'text-amber-600':'text-emerald-600')+'">'+fmtVND(amount)+'</div><div class="text-[11px] text-muted mt-1">Đã lọc số điện thoại, mã giao dịch và ưu tiên dòng có đơn vị tiền.</div></div><button id="payBillApplyBtn" type="button" onclick="applyBillAmount()" class="min-h-[38px] px-3 py-2 rounded-xl '+(over?'bg-amber-600':'bg-emerald-600')+' text-white text-[12px] font-semibold shrink-0 whitespace-nowrap inline-flex items-center justify-center gap-1.5 leading-none">Áp dụng</button></div>'
+        +(over?'<div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800 flex gap-2"><span class="ms text-[17px] text-amber-600">warning</span><div><b>Bill cao hơn số còn nợ.</b><br>Số còn nợ hiện tại là '+fmtVND(max)+'. Khi áp dụng, hệ thống sẽ chỉ điền tối đa số còn nợ để tránh ghi nhận vượt công nợ.</div></div>':'');
+    } else {
+      if(box) box.innerHTML='<div class="text-amber-700">Chưa nhận dạng được số tiền rõ ràng. Bạn vẫn có thể ghi nhận và nhập số tiền thủ công.</div>';
+    }
+  }catch(e){ console.warn('[payBillOcr]', (e && e.message) || String(e));  if(box) box.innerHTML='<div class="text-rose-600">Không OCR được bill: '+esc(e.message||e)+'</div>'; }
+};
+V223_IMPL["savePayment__9267"] = async function(sourceType,sourceId){
+  const accEl=$('#payAccount');
+  const data={SourceType:sourceType,SourceID:sourceId,Amount:moneyVal('payAmt'),Method:$('#payMethod').value,
+    PaymentDate:$('#payDate').value,Note:$('#payNote').value,AccountID:(accEl&&accEl.value)||''};
+  if(!data.Amount||Number(data.Amount)<=0) return toast('Nhập số tiền hợp lệ','error');
+  if(!data.AccountID) return toast(sourceType==='SalesOrder'?'Chọn tài khoản nhận tiền':'Chọn tài khoản thanh toán','error');
+  if(data.Method==='Chuyển khoản' && !PAY_BILL.data) return confirmMissingBill(()=>{ closeBillPreview(); doSavePayment(data); });
+  return doSavePayment(data);
+};
+V223_IMPL["doSavePayment__9276"] = async function(data){
+  if(data.Method==='Chuyển khoản' && PAY_BILL.data){
+    toast('Đang tải bill chuyển khoản lên Drive...','info');
+    const up=await gas('uploadTransferBill',{data:PAY_BILL.data,name:PAY_BILL.name,mimeType:PAY_BILL.mimeType});
+    if(up&&up.success&&up.data){ data.BillImageUrl=up.data.url; data.BillAmount=PAY_BILL.amount||''; data.BillOcrText=PAY_BILL.text||''; }
+    else return toast((up&&up.message)||'Không thể tải bill lên Drive','error');
+  }
+  toast('Đang ghi nhận...','info');
+  if(SAVING)return; setSaving(true);
+  const r=await gas('recordPayment',data); setSaving(false);
+  if(r.success){toast(r.message);closeModal();await reprime('sales','purchases','customers','suppliers','finance');await ensureFinanceData(true);render();}else toast(r.message,'error');
+};
+V223_IMPL["openReturnModal__9290"] = async function(){
+  const preparing=!STATE.cache.products||!STATE.cache.customers||!STATE.cache.sales||!STATE.returnMap;
+  if(preparing) openModalLoading('Tạo phiếu trả hàng','assignment_return',620);
+  const seq=preparing?MODAL_SEQ:0;
+  await Promise.all([load('products','getProducts'),load('customers','getCustomers'),load('sales','getSalesOrders'),whLoad().catch(()=>[]),loadReturnMap()]);
+  if(seq&&(!MODAL_OPEN||MODAL_SEQ!==seq)) return;
+  LINE_PRICE_MODE='sale'; LINE_STOCK_MODE='return'; LINE_PICK_LOCKED=false; LINE_ITEMS=[]; RT_DEBT={debt:0,count:0,hasDebt:false};
+  const cus=STATE.cache.customers||[]; const so=(STATE.cache.sales||[]).slice().reverse();
+  if(!cus.length) return toast('Chưa có khách hàng','error');
+  openModal(modalShell({title:'Tạo phiếu trả hàng', subtitle:'Nhập lại kho và hoàn tiền / trừ công nợ', icon:'assignment_return',
+    body: field('Hóa đơn gốc (tuỳ chọn)', returnInvoicePicker(so),'Chỉ gợi ý hóa đơn trạng thái Hoàn tất. Chọn hóa đơn sẽ khóa khách hàng và sản phẩm theo hóa đơn đó.')
+      + '<div id="rtCustomerWrap">'+field('Khách hàng *', entityPicker({id:'rtCustomer',kind:'customer',onpick:'rtDebtCheck'}))+'</div>'
+      + field('Ngày trả', inp('rtDate','','datetime-local',window.localDateTime(Date.now())))
+      + whField('rtWarehouse','','Nhập lại vào kho','Bỏ trống thì hàng quay về đúng kho đã xuất trên hóa đơn gốc')
+      + '<div id="rtLineWrap">'+linePicker('Sản phẩm trả')+'</div>'
+      + row2('<div class="mb-4"><label class="block text-[13px] font-medium text-ink mb-1.5">Kiểu xử lý '+infoTip('Hoàn tiền: ghi nhận toàn bộ giá trị trả cho khách.\nTrừ công nợ: hệ thống trừ tối đa phần công nợ đang có; nếu giá trị trả lớn hơn công nợ, phần còn lại sẽ được ghi nhận là cần hoàn cho khách.')+'</label>'+sel('rtType',['Hoàn tiền','Trừ công nợ'],'Hoàn tiền').replace('<select','<select onchange="rtDebtCheck()"')+'<div id="rtDebtStatus" class="mt-2 text-[12px] text-muted"></div></div>', field('Hình thức', sel('rtMethod',['Tiền mặt','Chuyển khoản','Đối trừ công nợ'])))
+      + field('Ghi chú', inp('rtNotes'))
+      + '<div id="rtSettlement" class="rounded-2xl bg-bg px-4 py-3 space-y-2"><div class="flex justify-between items-center"><span class="text-[13px] text-muted">Tổng giá trị trả</span><span id="lineTotal" class="font-bold text-rose-600">0 đ</span></div><div id="rtSettlementRows" class="hidden"></div></div>',
+    footer:btnSecondary('Huỷ','closeModal()','close')+btnPrimary('Tạo phiếu trả','saveReturn()','save')}));
+};
+V223_IMPL["rtLoadInvoice__9348"] = async function(){
+  const id=$('#rtInvoice').value;
+  if(!id){ rtClearInvoice(); return; }
+  const r=await detailGet('getSalesDetail',id);
+  if(r.success && r.data){
+    const o=r.data.order||{};
+    LINE_PICK_LOCKED=true; LINE_STOCK_MODE='return';
+    const wrap=$('#rtCustomerWrap'); if(wrap) wrap.innerHTML=field('Khách hàng *','<input type="hidden" id="rtCustomer" value="'+esc(o.CustomerID||'')+'"/><div class="rounded-xl border border-line bg-bg/70 px-4 py-3 flex items-center gap-3"><div class="w-9 h-9 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center"><span class="ms text-[20px]">lock</span></div><div><div class="text-[13px] font-semibold text-ink">'+esc(o.CustomerName||'')+'</div><div class="text-[11px] text-muted">Khóa theo hóa đơn '+esc(id)+'</div></div></div>');
+    // Gộp theo sản phẩm (1 HĐ có thể có SP lặp nhiều dòng) và tính CÒN ĐƯỢC TRẢ = đã bán − đã trả trước đó.
+    const returned=r.data.returnedQty||{};
+    const sold={}, price={};
+    (r.data.items||[]).forEach(it=>{ sold[it.ProductID]=(sold[it.ProductID]||0)+Number(it.Quantity); price[it.ProductID]=Number(it.SalePrice); });
+    LINE_ITEMS=Object.keys(sold).map(pid=>{ const s=sold[pid], ret=Number(returned[pid])||0, remain=Math.max(0,s-ret); return {ProductID:pid,Quantity:remain,price:price[pid],_maxQty:remain,_soldQty:s,_returnedQty:ret,_originalQty:0}; });
+    const lw=$('#rtLineWrap'); if(lw) lw.innerHTML=linePicker('Sản phẩm trả');
+    refreshLines();
+    rtDebtCheck();
+    if(LINE_ITEMS.length && LINE_ITEMS.every(l=>Number(l._maxQty)<=0)) toast('Hóa đơn này đã trả hết toàn bộ sản phẩm','info');
+  }
+};
+V223_IMPL["rtDebtCheck__9367"] = async function(){
+  const box=$('#rtDebtStatus'); if(!box) return;
+  if((($('#rtType')||{}).value||'')!=='Trừ công nợ'){ RT_DEBT={debt:0,count:0,hasDebt:false}; box.innerHTML=''; rtUpdateSettlement(); return; }
+  const customerId=(($('#rtCustomer')||{}).value)||'', salesId=(($('#rtInvoice')||{}).value)||'';
+  if(!customerId && !salesId){ box.innerHTML='<span class="text-amber-600">Chọn khách hàng hoặc hóa đơn để tra soát công nợ.</span>'; return; }
+  box.innerHTML='<span class="inline-flex items-center gap-1 text-brand-600 animate-pulse"><span class="ms text-[16px]">sync</span>Đang tra soát công nợ...</span>';
+  try{
+    const r=await gas('checkReturnDebt', customerId, salesId);
+    const d=(r&&r.data)||{};
+    RT_DEBT={debt:Number(d.debt)||0,count:Number(d.count)||0,hasDebt:!!d.hasDebt};
+    if(d.hasDebt) box.innerHTML='<span class="inline-flex items-center gap-1 text-emerald-600"><span class="ms text-[16px]">verified</span>Có thể trừ công nợ: '+fmtVND(d.debt)+' trên '+fmtNum(d.count)+' chứng từ.</span>';
+    else box.innerHTML='<span class="inline-flex items-center gap-1 text-amber-700"><span class="ms text-[16px]">info</span>Khách không còn công nợ. Phiếu vẫn được ghi nhận và toàn bộ giá trị sẽ là phần cần hoàn.</span>';
+    rtUpdateSettlement();
+  }catch(e){ console.warn('[rtDebtCheck]', (e && e.message) || String(e));  box.innerHTML='<span class="text-rose-600">Không tra soát được công nợ: '+esc(e.message||e)+'</span>'; }
+};
+V223_IMPL["saveReturn__9396"] = async function(){
+  if(!LINE_ITEMS.length) return toast('Thêm sản phẩm cần trả','error');
+  if(!validateLineItems(true)) return;
+  const data={SalesID:$('#rtInvoice').value||'',CustomerID:$('#rtCustomer').value,ReturnDate:$('#rtDate').value,
+    ReturnType:$('#rtType').value, RefundMethod:$('#rtMethod').value, Notes:$('#rtNotes').value,
+    WarehouseID:whVal('rtWarehouse'),
+    items:vatItemsPayload(LINE_ITEMS.map(l=>({ProductID:l.ProductID,Quantity:l.Quantity,SalePrice:l.price})))};
+  if(!data.CustomerID && !data.SalesID) return toast('Chọn khách hàng hoặc hóa đơn gốc','error');
+  toast('Đang tạo...','info');
+  if(SAVING)return; setSaving(true);
+  const r=await gas('createSalesReturn',data); setSaving(false);
+  if(r.success){toast(r.message);closeModal();await reprime('returns','sales','products','movements','customers');render();}else toast(r.message,'error');
+};
+V223_IMPL["viewReturn__9409"] = async function(id){
+  openModalLoading('Phiếu trả hàng '+id,'assignment_return',720);
+  const r=await detailGet('getSalesReturnDetail',id);
+  if(!r.success){ closeModal(); return toast(r.message,'error'); }
+  const d=r.data; const o=d.ret||{};
+  const total=Number(o.TotalAmount)||0;
+  const refund=Number(o.RefundAmount)||0;
+  const status=returnDisplayStatus(o);
+  const isRefundType=String(o.ReturnType||'')==='Hoàn tiền';
+  const offset=isRefundType?0:Math.max(0,total-refund);
+  const refunded=isRefundType?Math.max(0,total-refund):0;
+  const totalLines=[['Kiểu xử lý',esc(o.ReturnType||''),'font-medium text-ink'],['Tổng giá trị trả',fmtVND(total),'font-bold text-rose-600']];
+  if(isRefundType) totalLines.push(['Đã hoàn khách',fmtVND(refunded),'text-emerald-600 font-semibold']);
+  else totalLines.push(['Đã trừ công nợ',fmtVND(offset),'text-emerald-600 font-semibold']);
+  totalLines.push(['Còn phải hoàn khách',fmtVND(refund),refund>0?'text-amber-600 font-bold':'text-muted font-semibold']);
+  const refundAction = refund>0 ? btnPrimary('Ghi nhận hoàn tiền','openReturnRefundModal(\''+id+'\','+refund+')','payments') : '';
+  $('#modalBox').innerHTML=modalShell({title:'Phiếu trả hàng '+id, subtitle:o.CustomerName||'', icon:'assignment_return',
+    body:'<div class="flex items-center justify-between text-[13px] mb-4"><span class="text-muted">Ngày trả: <b class="text-ink">'+fmtDate(o.ReturnDate)+'</b> - HĐ gốc: <b class="text-ink">'+esc(o.SalesID||'-')+'</b></span>'+badge(status)+'</div>'
+      +detailItemsTable([{label:'Sản phẩm',key:'ProductName'},{label:'SL',right:true,key:'Quantity'},{label:'Đơn giá',right:true,render:r=>fmtVND(r.SalePrice)},{label:'Thành tiền',right:true,render:r=>fmtVND(r.LineRevenue)}], d.items||[])
+      +detailTotals(totalLines)
+      +paymentTimeline(d.payments||[],'Lịch sử hoàn tiền / đối trừ'),
+    footer:btnSecondary('Đóng','closeModal()','close')+refundAction});
+};
+V223_IMPL["doReturnRefund__9440"] = async function(returnId){
+  if(SAVING)return; setSaving(true);
+  const r=await gas('completeSalesReturnRefund', returnId, $('#retRefundMethod').value, $('#retRefundNote').value);
+  setSaving(false);
+  if(r.success){ toast(r.message); closeModal(); await reprime('returns','sales','customers'); render(); }
+  else toast(r.message,'error');
+};
+V223_IMPL["openPartyCashModal__9452"] = async function(kind){
+  const isCust=kind==='customer', cacheKey=isCust?'customers':'suppliers';
+  const preparing=!STATE.cache[cacheKey]||!financeModalReady();
+  if(preparing) openModalLoading(isCust?'Tạo phiếu thu khách hàng':'Tạo phiếu chi nhà cung cấp',isCust?'add_card':'payments',720);
+  const seq=preparing?MODAL_SEQ:0;
+  await Promise.all([load(cacheKey,isCust?'getCustomers':'getSuppliers'),ensureFinanceModalData()]);
+  if(seq&&(!MODAL_OPEN||MODAL_SEQ!==seq)) return;
+  PARTY_CASH={kind:kind,openDocs:[],requestSeq:0};
+  PAY_BILL={data:'',name:'',mimeType:'',amount:0,text:'',uploadUrl:'',maxAmount:0};
+  const srcType=isCust?'SalesOrder':'PurchaseOrder';
+  const body=field(isCust?'Khách hàng *':'Nhà cung cấp *',entityPicker({id:'partyCashObject',kind:isCust?'customer':'supplier',onpick:'partyCashObjectChanged'}))
+    +field(isCust?'Số tiền thu *':'Số tiền chi *',moneyInp('partyCashAmount',0))
+    +'<div class="mb-4"><label class="block text-[13px] font-medium text-ink mb-2">Cách ghi nhận</label><div class="grid grid-cols-1 sm:grid-cols-2 gap-2">'
+      +'<label class="cursor-pointer"><input type="radio" name="partyCashAllocation" value="auto" checked onchange="partyCashAllocationChanged()" class="peer sr-only"/><div class="rounded-xl border border-stroke bg-white p-3 peer-checked:border-brand-500 peer-checked:bg-brand-50 transition"><div class="flex items-center gap-2 font-semibold text-[13px] text-ink"><span class="ms text-brand-600">auto_awesome</span>Tự động phân bổ</div><div class="text-[11px] text-muted mt-1">Ưu tiên chứng từ còn nợ cũ nhất.</div></div></label>'
+      +'<label class="cursor-pointer"><input type="radio" name="partyCashAllocation" value="advance" onchange="partyCashAllocationChanged()" class="peer sr-only"/><div class="rounded-xl border border-stroke bg-white p-3 peer-checked:border-amber-500 peer-checked:bg-amber-50 transition"><div class="flex items-center gap-2 font-semibold text-[13px] text-ink"><span class="ms text-amber-600">account_balance_wallet</span>'+(isCust?'Khách trả trước':'Trả trước NCC')+'</div><div class="text-[11px] text-muted mt-1">Không gắn vào chứng từ cũ.</div></div></label>'
+    +'</div><div id="partyCashDebtHint" class="mt-2 rounded-xl border border-dashed border-stroke bg-bg px-3 py-2.5 text-[12px] text-muted">Chọn '+(isCust?'khách hàng':'nhà cung cấp')+' để tra cứu công nợ.</div></div>'
+    +row2(field(isCust?'Ngày thu':'Ngày chi',inp('partyCashDate','','datetime-local',window.localDateTime(Date.now()))),field('Phương thức',sel('partyCashMethod',['Tiền mặt','Chuyển khoản','Thẻ']).replace('<select','<select onchange="payMethodChanged(\'partyCashMethod\');payAccountSync(\'partyCashMethod\',\'partyCashAccount\')"')))
+    +payAccountField(srcType,'partyCashMethod','partyCashAccount')
+    +'<div id="payBillWrap" class="bill-reveal">'+transferBillBox()+'</div>'
+    +field('Ghi chú',txt('partyCashNote',isCust?'Nội dung phiếu thu...':'Nội dung phiếu chi...'));
+  openModal(modalShell({title:isCust?'Tạo phiếu thu khách hàng':'Tạo phiếu chi nhà cung cấp',
+    subtitle:isCust?'Thu nợ hoặc ghi nhận khách trả trước':'Thanh toán công nợ hoặc trả trước nhà cung cấp',icon:isCust?'add_card':'payments',body:body,
+    footer:btnSecondary('Hủy','closeModal()','close')+btnPrimary(isCust?'Lập phiếu thu':'Lập phiếu chi',isCust?'saveCustomerReceipt()':'saveSupplierPayment()',isCust?'check_circle':'payments')}),720);
+  initPayBillToggle('partyCashMethod'); payAccountSync('partyCashMethod','partyCashAccount');
+};
+V223_IMPL["partyCashObjectChanged__9477"] = async function(){
+  const id=(($('#partyCashObject')||{}).value)||'', hint=$('#partyCashDebtHint');
+  const requestSeq=++PARTY_CASH.requestSeq;
+  if(!id){ PARTY_CASH.openDocs=[]; if(hint)hint.textContent='Chọn đối tượng để tra cứu công nợ.'; return; }
+  if(hint) hint.innerHTML='<span class="inline-flex items-center gap-1.5"><span class="ms animate-spin text-[16px]">progress_activity</span>Đang tra cứu công nợ...</span>';
+  const isCust=PARTY_CASH.kind==='customer';
+  const r=await gas(isCust?'getCustomerOpenInvoices':'getSupplierOpenBills',id);
+  if(requestSeq!==PARTY_CASH.requestSeq) return;
+  PARTY_CASH.openDocs=(r&&r.data)||[];
+  const dueKey=isCust?'ReceivableAmount':'PayableAmount';
+  const debt=PARTY_CASH.openDocs.reduce((s,d)=>s+(Number(d[dueKey])||0),0);
+  PARTY_CASH.debt=debt;
+  PAY_BILL.maxAmount=0;
+  partyCashAllocationChanged();
+};
+V223_IMPL["savePartyCash__9506"] = async function(kind){
+  const isCust=kind==='customer', objectId=(($('#partyCashObject')||{}).value)||'', amount=moneyVal('partyCashAmount');
+  if(!objectId) return toast(isCust?'Chọn khách hàng':'Chọn nhà cung cấp','error');
+  if(!(amount>0)) return toast('Nhập số tiền hợp lệ','error');
+  const acc=(($('#partyCashAccount')||{}).value)||''; if(!acc) return toast(isCust?'Chọn tài khoản nhận tiền':'Chọn tài khoản thanh toán','error');
+  const method=(($('#partyCashMethod')||{}).value)||'Tiền mặt';
+  const payload={ObjectID:objectId,Amount:amount,PaymentDate:$('#partyCashDate').value,Method:method,AccountID:acc,
+    AllocationMode:(document.querySelector('input[name="partyCashAllocation"]:checked')||{}).value||'auto',Note:$('#partyCashNote').value};
+  if(method==='Chuyển khoản'&&!PAY_BILL.data) return confirmMissingBill(()=>doSavePartyCash(kind,payload));
+  return doSavePartyCash(kind,payload);
+};
+V223_IMPL["doSavePartyCash__9517"] = async function(kind,payload){
+  if(SAVING)return; setSaving(true); const isCust=kind==='customer';
+  if(payload.Method==='Chuyển khoản'&&PAY_BILL.data){
+    const up=await gas('uploadTransferBill',{data:PAY_BILL.data,name:PAY_BILL.name,mimeType:PAY_BILL.mimeType});
+    if(!up||!up.success){setSaving(false);return toast((up&&up.message)||'Không thể tải bill lên Drive','error');}
+    payload.BillImageUrl=up.data.url; payload.BillAmount=PAY_BILL.amount||''; payload.BillOcrText=PAY_BILL.text||'';
+  }
+  const r=await gas(isCust?'recordCustomerReceipt':'recordSupplierPayment',payload); setSaving(false);
+  if(!r||!r.success) return toast((r&&r.message)||'Không thể ghi nhận phiếu','error');
+  const d=r.data||{};
+  toast((r.message||'Đã ghi nhận')+(Number(d.advance)>0?' · '+(isCust?'Thu trước ':'Trả trước ')+fmtVND(d.advance):''));
+  closeModal(); delete STATE.cache.finance; invalidate('sales','purchases','customers','suppliers');
+  await reprime(isCust?'sales':'purchases',isCust?'customers':'suppliers'); render();
+};
+V223_IMPL["openAllocModal__9533"] = async function(objectType){
+  ALLOC={objectType:objectType, docs:[]};
+  PAY_BILL={data:'',name:'',mimeType:'',amount:0,text:'',uploadUrl:'',maxAmount:0};
+  const isCust = objectType==='Customer';
+  const cacheKey=isCust?'customers':'suppliers';
+  const preparing=!STATE.cache[cacheKey]||!financeModalReady();
+  if(preparing) openModalLoading(isCust?'Thu tiền khách hàng':'Trả tiền nhà cung cấp','account_balance_wallet',720);
+  const seq=preparing?MODAL_SEQ:0;
+  await Promise.all([load(cacheKey,isCust?'getCustomers':'getSuppliers'),ensureFinanceModalData().catch(()=>null)]);
+  if(seq&&(!MODAL_OPEN||MODAL_SEQ!==seq)) return;
+  const list = isCust ? (STATE.cache.customers||[]) : (STATE.cache.suppliers||[]);
+  const idKey = isCust?'CustomerID':'SupplierID'; const nameKey=isCust?'CustomerName':'SupplierName';
+  openModal(modalShell({title:isCust?'Thu tiền khách hàng':'Trả tiền nhà cung cấp', subtitle:'Một phiếu thanh toán có thể gán (phân bổ) cho nhiều chứng từ nợ', icon:'account_balance_wallet',
+    body: field(isCust?'Khách hàng *':'Nhà cung cấp *', entityPicker({id:'allocObj',kind:isCust?'customer':'supplier',onpick:'allocLoadDocs'}))
+      + '<div id="allocList" class="mb-3"><div class="text-center text-muted text-[13px] py-6 border border-dashed border-stroke rounded-xl">Chọn đối tượng để xem chứng từ còn nợ</div></div>'
+      + row2(field('Tổng tiền '+(isCust?'thu':'trả'), moneyInp('allocTotal',0), 'Gõ tổng tiền — hệ thống tự gán vào các chứng từ (cũ trước)'), field('Phương thức', sel('allocMethod',['Tiền mặt','Chuyển khoản','Thẻ']).replace('<select',"<select onchange=\"payMethodChanged('allocMethod');payAccountSync('allocMethod','allocAccount')\"")))
+      + payAccountField(isCust?'SalesOrder':'PurchaseOrder','allocMethod','allocAccount')
+      + '<div id="payBillWrap" class="bill-reveal">'+transferBillBox()+'</div>'
+      + '<button onclick="allocAuto()" class="text-brand-600 text-[13px] font-semibold flex items-center gap-1 mb-2"><span class="ms text-[18px]">auto_fix_high</span>Tự động phân bổ lại (chứng từ cũ trước)</button>'
+      + row2(field('Ngày', inp('allocDate','','datetime-local',window.localDateTime(Date.now()))), field('Ghi chú', inp('allocNote')))
+      + '<div class="flex justify-between items-center bg-bg rounded-xl px-4 py-3"><span class="text-[13px] text-muted">Đã phân bổ vào chứng từ</span><span id="allocSum" class="font-bold text-ink">0 đ</span></div>',
+    footer:btnSecondary('Huỷ','closeModal()','close')+btnPrimary('Ghi nhận','allocSubmit()','check')}));
+  const at=$('#allocTotal'); if(at) at.oninputAfter=allocAuto;
+  initPayBillToggle('allocMethod');
+  payAccountSync('allocMethod','allocAccount');
+};
+V223_IMPL["allocLoadDocs__9559"] = async function(){
+  const id=$('#allocObj').value; const isCust=ALLOC.objectType==='Customer';
+  const cont=$('#allocList');
+  if(!id){ cont.innerHTML='<div class="text-center text-muted text-[13px] py-6 border border-dashed border-stroke rounded-xl">Chọn đối tượng để xem chứng từ còn nợ</div>'; ALLOC.docs=[]; allocRecalc(); return; }
+  cont.innerHTML='<div class="text-center text-muted text-[13px] py-4">Đang tải...</div>';
+  const r=await gas(isCust?'getCustomerOpenInvoices':'getSupplierOpenBills', id);
+  ALLOC.docs=(r.data||[]);
+  const dueKeyForMax=isCust?'ReceivableAmount':'PayableAmount';
+  PAY_BILL.maxAmount=ALLOC.docs.reduce((s,d)=>s+(Number(d[dueKeyForMax])||0),0);
+  if(!ALLOC.docs.length){ cont.innerHTML='<div class="text-center text-emerald-600 text-[13px] py-6 border border-dashed border-emerald-200 rounded-xl">Không còn chứng từ nợ</div>'; allocRecalc(); return; }
+  const idKey=isCust?'SalesID':'PurchaseID'; const dueKey=isCust?'ReceivableAmount':'PayableAmount'; const dateKey=isCust?'SalesDate':'PurchaseDate';
+  cont.innerHTML='<div class="border border-line rounded-xl overflow-hidden max-h-[240px] overflow-y-auto"><table class="w-full text-[13px]"><thead><tr class="bg-bg"><th class="text-left px-3 py-2 text-muted font-semibold">Chứng từ</th><th class="text-right px-3 py-2 text-muted font-semibold">Còn nợ</th><th class="px-3 py-2 text-muted font-semibold">Phân bổ</th></tr></thead><tbody>'
+    + ALLOC.docs.map((d,i)=>'<tr class="border-t border-line"><td class="px-3 py-2">'+esc(d[idKey])+'<div class="text-[11px] text-muted">'+fmtDate(d[dateKey])+'</div></td><td class="px-3 py-2 text-right text-rose-600">'+fmtVND(d[dueKey])+'</td><td class="px-3 py-2"><input id="al_'+i+'" inputmode="numeric" value="" placeholder="0" oninput="moneyFmt(this);allocRecalc()" class="w-28 fld py-1 text-right"/></td></tr>').join('')
+    + '</tbody></table></div>';
+  if(moneyVal('allocTotal')>0) allocAuto(); else allocRecalc();
+};
+V223_IMPL["allocSubmit__9582"] = async function(){
+  const isCust=ALLOC.objectType==='Customer'; const objId=$('#allocObj').value;
+  if(!objId) return toast('Chọn đối tượng','error');
+  const idKey=isCust?'SalesID':'PurchaseID'; const srcType=isCust?'SalesOrder':'PurchaseOrder';
+  const allocations=[];
+  ALLOC.docs.forEach((d,i)=>{ const el=$('#al_'+i); const amt=el?pInt(el.value):0; if(amt>0) allocations.push({SourceType:srcType, SourceID:d[idKey], Amount:amt}); });
+  if(!allocations.length) return toast('Nhập số tiền phân bổ cho ít nhất 1 chứng từ','error');
+  const accEl=$('#allocAccount');
+  if(!accEl||!accEl.value) return toast(isCust?'Chọn tài khoản nhận tiền':'Chọn tài khoản thanh toán','error');
+  const payload={ObjectType:ALLOC.objectType, ObjectID:objId, Method:$('#allocMethod').value, PaymentDate:$('#allocDate').value,
+    Note:$('#allocNote').value, allocations:allocations, AccountID:accEl.value};
+  if(payload.Method==='Chuyển khoản' && !PAY_BILL.data) return confirmMissingBill(()=>doAllocSubmit(payload));
+  return doAllocSubmit(payload);
+};
+V223_IMPL["doAllocSubmit__9596"] = async function(payload){
+  toast('Đang ghi nhận...','info');
+  if(SAVING)return; setSaving(true);
+  if(payload.Method==='Chuyển khoản' && PAY_BILL.data){
+    toast('Đang tải bill chuyển khoản lên Drive...','info');
+    const up=await gas('uploadTransferBill',{data:PAY_BILL.data,name:PAY_BILL.name,mimeType:PAY_BILL.mimeType});
+    if(up&&up.success&&up.data){ payload.BillImageUrl=up.data.url; payload.BillAmount=PAY_BILL.amount||''; payload.BillOcrText=PAY_BILL.text||''; }
+    else { setSaving(false); return toast((up&&up.message)||'Không thể tải bill lên Drive','error'); }
+  }
+  const r=await gas('recordPayment',payload); setSaving(false);
+  if(r.success){toast('Đã ghi nhận thanh toán');closeModal();await reprime('sales','purchases','customers','suppliers','finance');await ensureFinanceData(true);render();}else toast(r.message,'error');
+};
+V223_IMPL["saveUser__9614"] = async function(){
+  const data={FullName:$('#uName').value,Email:$('#uEmail').value,Role:$('#uRole').value};
+  if(!data.FullName||!data.Email) return toast('Nhập đủ thông tin','error');
+  const r=await gas('createUser',data);
+  if(r.success){toast(r.message);closeModal();render();}else toast(r.message,'error');
+};
+V223_IMPL["viewPayment__9693"] = async function(id){
+  openModalLoading('Thanh toán '+id,'payments',780);
+  const r=await detailGet('getPaymentDetail',id);
+  if(!r.success){ closeModal(); return toast(r.message,'error'); }
+  const d=r.data||{}, p=d.payment||{};
+  const incoming=String(p.PaymentDirection)==='In' || String(p.PaymentDirection)==='Thu';
+  const sourceRows=(d.sources||[]).map(s=>Object.assign({},s,{_action:s.SourceType==='SalesOrder'?'viewSales':(s.SourceType==='PurchaseOrder'?'viewPurchase':'')}));
+  const tabKey='paydet_'+String(id).replace(/\W/g,'');
+  $('#modalBox').innerHTML=modalShell({title:'Phiếu thanh toán '+id, subtitle:(p.ObjectName||'')+' · '+fmtDate(p.PaymentDate), icon:'payments',
+    body:'<div id="'+tabKey+'"><div class="flex items-center gap-2 mb-4"><button data-tab-btn="detail" onclick="switchInlineTab(\''+tabKey+'\',\'detail\')" class="px-3 py-2 rounded-xl text-[13px] font-semibold transition bg-brand-600 text-white shadow-sm">Chi tiết</button><button data-tab-btn="bill" onclick="switchInlineTab(\''+tabKey+'\',\'bill\')" class="px-3 py-2 rounded-xl text-[13px] font-semibold transition bg-white border border-stroke text-muted hover:bg-bg">Bill chuyển khoản</button></div>'
+      +'<div data-tab="detail" class="fade-in"><div class="grid grid-cols-2 gap-3 mb-4">'+miniStat(incoming?'Số tiền thu':'Số tiền chi','<span class="'+(incoming?'text-emerald-600':'text-rose-600')+'">'+fmtVND(p.Amount)+'</span>')+miniStat('Phương thức',esc(p.Method||''))+'</div>'
+      +'<div class="rounded-xl bg-bg p-3 text-[13px] mb-4">'+infoRows([['Đối tượng',p.ObjectName],['Hướng',p.PaymentDirection],['Chứng từ gốc',p.SourceID],['Ghi chú',p.Note]])+'</div>'
+      +'<h4 class="font-semibold text-ink text-[14px] mb-2">Chứng từ liên quan</h4>'
+      +detailItemsTable([{label:'Loại',render:x=>badge(x.SourceType)},{label:'Mã',key:'SourceID'},{label:'Tên',key:'Name'},{label:'Ngày',render:x=>fmtDate(x.Date)},{label:'Phân bổ',right:true,render:x=>fmtVND(x.AllocAmount)},{label:'Còn lại',right:true,render:x=>x.RemainAmount===''?'-':fmtVND(x.RemainAmount)},{label:'',right:true,render:x=>x._action?'<button onclick="'+x._action+'(\''+x.SourceID+'\')" class="text-brand-600 text-[12px] font-semibold hover:underline">Mở</button>':''}], sourceRows)
+      +'<h4 class="font-semibold text-ink text-[14px] mb-2">Sản phẩm trong chứng từ</h4>'
+      +detailItemsTable([{label:'Chứng từ',key:'SourceID'},{label:'Sản phẩm',key:'ProductName'},{label:'SL',right:true,render:x=>fmtNum(x.Quantity)},{label:'Đơn giá',right:true,render:x=>fmtVND(x.Price)},{label:'Thành tiền',right:true,render:x=>fmtVND(x.LineTotal)}], d.items||[])+'</div>'
+      +'<div data-tab="bill" class="hidden fade-in">'+billImageCard(p,false)+'</div></div>',
+    footer:btnSecondary('Đóng','closeModal()','close')});
+};
+V223_IMPL["viewSales__9712"] = async function(id){
+  openModalLoading('Hóa đơn '+id,'receipt',840);
+  const r=await detailGet('getSalesDetail',id);
+  if(!r.success){ closeModal(); return toast(r.message,'error'); }
+  const d=r.data; const o=d.order||{};
+  const locked=isLocked_(o.Status), cancelled=isCancelled_(o.Status);
+  const isOpeningDebt = o.Status === 'NO_CU'; // PHÁT HIỆN NỢ CŨ
+  
+  const lockBtn = (cancelled || isOpeningDebt) ? '' : (locked ? btnSecondary('Mở khóa','lockSales(\''+id+'\',false)','lock_open') : btnSecondary('Khóa','lockSales(\''+id+'\',true)','lock'));
+  const tabKey='salesdet_'+String(id).replace(/\W/g,'');
+  
+  $('#modalBox').innerHTML=modalShell({title: isOpeningDebt ? 'Phiếu nợ cũ '+id : 'Hóa đơn '+id, subtitle:(o.CustomerName||'')+(locked?' · ĐÃ KHÓA':''), icon: isOpeningDebt ? 'account_balance' : 'receipt',
+    body:'<div id="'+tabKey+'"><div class="flex items-center gap-2 mb-4"><button data-tab-btn="detail" onclick="switchInlineTab(\''+tabKey+'\',\'detail\')" class="px-3 py-2 rounded-xl text-[13px] font-semibold transition bg-brand-600 text-white shadow-sm">Chi tiết</button>'
+        // ẨN TAB NẾU LÀ NỢ CŨ
+        + (!isOpeningDebt ? '<button data-tab-btn="stock" onclick="switchInlineTab(\''+tabKey+'\',\'stock\')" class="px-3 py-2 rounded-xl text-[13px] font-semibold transition bg-white border border-stroke text-muted hover:bg-bg">Biến động kho</button>' : '')
+        +'<button data-tab-btn="payment" onclick="switchInlineTab(\''+tabKey+'\',\'payment\')" class="px-3 py-2 rounded-xl text-[13px] font-semibold transition bg-white border border-stroke text-muted hover:bg-bg">Thanh toán / Bill</button>'
+        + (!isOpeningDebt ? '<button data-tab-btn="returns" onclick="switchInlineTab(\''+tabKey+'\',\'returns\')" class="px-3 py-2 rounded-xl text-[13px] font-semibold transition bg-white border border-stroke text-muted hover:bg-bg inline-flex items-center gap-1"><span class="ms text-[16px]">assignment_return</span>Trả hàng'+(d.returns&&d.returns.length?' <span class="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold">'+d.returns.length+'</span>':'')+'</button>' : '')
+        +'</div>'
+      +'<div data-tab="detail" class="fade-in"><div class="flex items-center justify-between text-[13px] mb-4"><span class="text-muted">Ngày ghi nhận: <b class="text-ink">'+fmtDate(o.SalesDate)+'</b></span><div class="flex items-center gap-2 flex-wrap justify-end">'+badge(isOpeningDebt ? 'Khởi tạo Nợ Cũ' : o.Status)+badge(o.PaymentStatus)+(!isOpeningDebt && d.returns&&d.returns.length?'<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 ring-1 ring-amber-200"><span class="ms text-[14px]">assignment_return</span>Có trả hàng</span>':'')+'</div></div>'
+      
+      // CHI TIẾT ITEM BÊN TRONG
+      +detailItemsTable([{label:'Ghi chú',key:'ProductName'},{label:'Số tiền',right:true,render:r=>fmtVND(r.SalePrice)}], d.items||[])
+      
+      +detailTotals([['Tổng nợ gốc',fmtVND(o.TotalAmount),'font-bold text-ink'],['Đã thanh toán',fmtVND(o.PaidAmount),'text-emerald-600'],['Còn nợ',fmtVND(o.ReceivableAmount),'text-rose-600 font-semibold']])+'</div>'
+      
+      + (!isOpeningDebt ? '<div data-tab="stock" class="hidden fade-in">'+stockMovementTimeline(d.movements||[],'Lịch sử thêm hàng / biến động kho')+'</div>' : '')
+      +'<div data-tab="payment" class="hidden fade-in">'+paymentTimeline(d.payments,'Lịch sử thu tiền / đối trừ')+'</div>'
+      + (!isOpeningDebt ? '<div data-tab="returns" class="hidden fade-in">'+salesReturnsPanel(d.returns, id, cancelled)+'</div>' : '')
+      +'</div>',
+      
+    // CẤM SỬA VÀ IN GỬI NẾU LÀ NỢ CŨ
+    footer:(locked?'':btnSecondary('Xóa','confirmDelete(\'sales\',\''+id+'\')','delete'))+lockBtn+(locked||cancelled||isOpeningDebt?'':btnSecondary('Sửa','openSalesModal(\''+id+'\')','edit'))+(cancelled||isOpeningDebt?'':btnSecondary('Trả hàng','openReturnForInvoice(\''+id+'\')','assignment_return'))+(isOpeningDebt ? '' : btnSecondary('In / Gửi','openDocModal(\'sales\',\''+id+'\')','print'))+(Number(o.ReceivableAmount)>0?btnPrimary('Thu nợ','closeModal();openPaymentModal(\'SalesOrder\',\''+id+'\','+Number(o.ReceivableAmount)+')','payments'):btnSecondary('Đóng','closeModal()','close'))});
+};
+V223_IMPL["openReturnForInvoice__9760"] = async function(salesId){
+  if(!salesId) return toast('Không xác định được hóa đơn cần trả hàng.','error');
+  await openReturnModal();
+  // openReturnModal có thể dừng giữa chừng (vd chưa có khách hàng nào) -> đừng chọn tiếp kẻo lỗi
+  if(!$('#rtInvoice')) return;
+  const so=(STATE.cache.sales||[]).find(x=>String(x.SalesID)===String(salesId));
+  if(!so){ closeModal(); return toast('Không tìm thấy hóa đơn '+salesId,'error'); }
+  if(isCancelled_(String(so.Status||'').trim())){ closeModal(); return toast('Hóa đơn '+salesId+' đã hủy nên không tạo được phiếu trả hàng.','error'); }
+  if(typeof rtPickInvoice==='function') rtPickInvoice(salesId);
+};
+V223_IMPL["lockSales__9770"] = async function(id, lock){
+  toast(lock?'Đang khóa hóa đơn...':'Đang mở khóa...','info');
+  const r=await gas('updateField','SalesOrders','SalesID',id,'Status',lock?'Đã khóa':'Hoàn tất');
+  if(r.success){ toast(lock?'Đã khóa hóa đơn':'Đã mở khóa hóa đơn'); closeModal(); await reprime('sales','products','movements','customers'); render(); }
+  else toast(r.message,'error');
+};
+V223_IMPL["doChangePassword__10039"] = async function(){
+  const o=String(($('#cpOld')||{}).value||'');
+  const n=String(($('#cpNew')||{}).value||'');
+  const n2=String(($('#cpNew2')||{}).value||'');
+  if(!o) return toast('Vui lòng nhập mật khẩu hiện tại','error');
+  if(n.length<4) return toast('Mật khẩu mới phải từ 4 ký tự trở lên','error');
+  if(n!==n2) return toast('Hai lần nhập mật khẩu mới chưa khớp','error');
+  if(SAVING) return; setSaving(true);
+  const r=await gas('changeMyPassword', o, n);
+  setSaving(false);
+  if(!r.success) return toast(r.message,'error');
+  toast(r.message||'Đã đổi mật khẩu');
+  closeModal();
+};
+V223_IMPL["saveProfile__10069"] = async function(){
+  const data={ProfileName:$('#profName').value||'Admin AMC', ProfileAvatar:$('#pImg').value||''};
+  toast('Đang lưu...','info');
+  const r=await gas('saveSettings',data);
+  if(r.success){ toast('Đã lưu hồ sơ'); if(STATE.init){STATE.init.settings=STATE.init.settings||{}; STATE.init.settings.ProfileName=data.ProfileName; STATE.init.settings.ProfileAvatar=data.ProfileAvatar;} applyProfile(data.ProfileName, data.ProfileAvatar); closeModal(); }
+  else toast(r.message,'error');
+};
+V223_IMPL["loadReminderUI__10139"] = async function(){
+  const r=await gas('getReminderInfo'); const d=(r&&r.data)||{};
+  const t=$('#rmStatus'); if(t) t.innerHTML = d.active?'<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-semibold">Đang bật</span>':'<span class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-[11px] font-semibold">Đang tắt</span>';
+  if($('#rmEnable')) $('#rmEnable').checked=!!d.active;
+  if($('#rmHour') && d.hour) $('#rmHour').value=d.hour;
+  if($('#rmEmail')) $('#rmEmail').value=d.ownerEmail||'';
+  if($('#rmCust')) $('#rmCust').checked=!!d.remindCustomers;
+  if($('#rmCustInterval')) $('#rmCustInterval').value=d.customerIntervalDays||7;
+  // dự báo dòng tiền
+  const cr=await gas('getCashFlowForecast'); const c=(cr&&cr.data)||{};
+  const box=$('#rmForecast'); if(box){ box.innerHTML='<div class="grid grid-cols-3 gap-3 mb-3">'+miniStat('Dự kiến thu',fmtVND(c.inflow))+miniStat('Dự kiến chi',fmtVND(c.outflow))+miniStat('Dòng tiền ròng',fmtVND(c.net))+'</div>'; }
+};
+V223_IMPL["saveReminder__10151"] = async function(){
+  const on=$('#rmEnable').checked;
+  toast(on?'Đang lưu & bật lịch...':'Đang lưu cấu hình...','info');
+  const r=await gas('saveReminderSettings', on, $('#rmHour').value, $('#rmEmail').value, $('#rmCust').checked, $('#rmCustInterval').value);
+  if(r.success){toast(r.message);loadReminderUI();}else toast(r.message,'error');
+};
+V223_IMPL["testReminder__10157"] = async function(){ toast('Đang gửi bản tin nội bộ...','info'); const r=await gas('sendOwnerDebtDigestNow'); if(r.success)toast(r.message); else toast(r.message,'error'); };
+V223_IMPL["openCustomerReminderModal__10160"] = async function(){
+  openModal(modalShell({title:'Nhắc công nợ khách hàng', subtitle:'Chọn khách cần gửi email nhắc thanh toán, không spam tự động', icon:'mark_email_unread', body:loadingBlock(), footer:btnSecondary('Đóng','closeModal()','close')}), 820);
+  const r=await gas('getCustomerDebtReminderCandidates');
+  if(!r.success){ $('#modalBox').innerHTML=modalShell({title:'Nhắc công nợ khách hàng', subtitle:'Không tải được danh sách', icon:'mark_email_unread', body:emptyState(r.message||'Lỗi tải dữ liệu'), footer:btnSecondary('Đóng','closeModal()','close')}); return; }
+  CRM_REMINDER=(r.data&&r.data.rows)||[];
+  const interval=(r.data&&r.data.intervalDays)||7;
+  $('#modalBox').innerHTML=modalShell({title:'Nhắc công nợ khách hàng', subtitle:'Chu kỳ tự động hiện tại: '+interval+' ngày/lần/khách', icon:'mark_email_unread',
+    body:'<div class="flex items-center gap-2 mb-4 flex-wrap">'
+      +'<button type="button" onclick="customerReminderSelect(true)" class="px-3 py-2 rounded-xl bg-brand-50 text-brand-700 text-[13px] font-semibold inline-flex items-center gap-1"><span class="ms text-[17px]">select_all</span>Chọn tất cả</button>'
+      +'<button type="button" onclick="customerReminderSelect(false)" class="px-3 py-2 rounded-xl bg-white border border-stroke text-ink text-[13px] font-semibold inline-flex items-center gap-1"><span class="ms text-[17px]">deselect</span>Bỏ chọn tất cả</button>'
+      +'<div class="ml-auto text-[12px] text-muted"><span id="crmSelCount">0</span> khách được chọn</div></div>'
+      +'<div class="rounded-2xl border border-line overflow-hidden max-h-[460px] overflow-y-auto">'+customerReminderRows()+'</div>'
+      +'<div class="mt-4 rounded-xl bg-amber-50 border border-amber-100 px-4 py-3 text-[12px] text-amber-800 flex gap-2"><span class="ms text-[17px]">info</span><span>Gửi chủ động sẽ gửi ngay cho khách đã chọn. Những khách chưa có email sẽ bị bỏ qua.</span></div>',
+    footer:btnSecondary('Đóng','closeModal()','close')+btnPrimary('Gửi nhắc công nợ','sendSelectedCustomerReminders()','send')
+  });
+  customerReminderUpdateCount();
+};
+V223_IMPL["sendSelectedCustomerReminders__10198"] = async function(){
+  const ids=$$('.crm-check').filter(cb=>cb.checked).map(cb=>cb.getAttribute('data-crm-id'));
+  if(!ids.length) return toast('Chọn ít nhất 1 khách hàng','error');
+  toast('Đang gửi email nhắc công nợ...','info');
+  const r=await gas('sendCustomerDebtReminders', ids, true);
+  if(r.success){ toast(r.message); await openCustomerReminderModal(); }
+  else toast(r.message,'error');
+};
+V223_IMPL["openDocModal__10259"] = async function(kind, id){
+  openModalLoading('Chuẩn bị chứng từ...','print',1000);
+  try{ await ensureFinanceData(); }catch(e){ console.warn('[openDocModal]', (e && e.message) || String(e)); }   // cần danh sách tài khoản ngân hàng để chọn QR
+  const products=await load('products','getProducts');
+  const prodMap={}; (products||[]).forEach(p=>{ prodMap[p.ProductID]=p; if(p.SKU) prodMap[p.SKU]=p; });
+  function docItem(it, priceKey, totalKey){
+    const p=prodMap[it.ProductID]||prodMap[it.SKU]||{};
+    return {code:it.SKU||p.SKU||it.ProductID||'', name:it.ProductName||p.ProductName||'', unit:p.Unit||it.Unit||'', qty:it.Quantity, price:it[priceKey], discount:it.Discount||0, total:it[totalKey]};
+  }
+  let d=null;
+  if(kind==='sales'){ const r=await detailGet('getSalesDetail',id); if(!r.success){closeModal();return toast(r.message,'error');} const o=r.data.order||{};
+    const customers=await load('customers','getCustomers'); const c=(customers||[]).find(x=>x.CustomerID===o.CustomerID)||{};
+    d={code:id, docType:docTitleOf('sales'), dateLabel:'Ngày', date:o.SalesDate, partyLabel:'Khách hàng', partyName:o.CustomerName, partyId:o.CustomerID, showQR:true, total:o.TotalAmount, payAmount:o.ReceivableAmount||o.TotalAmount,
+       partyPhone:c.Phone||'', partyEmail:c.Email||'', partyAddress:c.Address||'', partyTax:c.TaxCode||'', signLabel:'Khách hàng',
+       items:(r.data.items||[]).map(it=>docItem(it,'SalePrice','LineRevenue')),
+       totals:[{label:'Tạm tính',value:o.Subtotal},{label:'Chiết khấu',value:o.Discount},{label:'VAT',value:o.VAT},{label:'Phí vận chuyển',value:o.ShippingFee},{label:'TỔNG CỘNG',value:o.TotalAmount,bold:true},{label:'Đã thanh toán',value:o.PaidAmount},{label:'Còn nợ',value:o.ReceivableAmount}], note:o.Notes};
+    // Gợi ý đúng tài khoản khách đã từng chuyển tiền vào cho hóa đơn này
+    const pays=(r.data.payments||[]).filter(p=>p.AccountID);
+    if(pays.length) d.qrAccountId=pays[pays.length-1].AccountID; }
+  else if(kind==='purchase'){ const r=await detailGet('getPurchaseDetail',id); if(!r.success){closeModal();return toast(r.message,'error');} const o=r.data.order||{};
+    const suppliers=await load('suppliers','getSuppliers'); const s=(suppliers||[]).find(x=>x.SupplierID===o.SupplierID)||{};
+    d={code:id, docType:docTitleOf('purchase'), dateLabel:'Ngày', date:o.PurchaseDate, partyLabel:'Nhà cung cấp', partyName:o.SupplierName, showQR:false,
+       partyPhone:s.Phone||'', partyEmail:s.Email||'', partyWebsite:s.Website||'', partyAddress:s.Address||'', partyTax:s.TaxCode||'', signLabel:'Nhà cung cấp',
+       items:(r.data.items||[]).map(it=>docItem(it,'UnitCost','LineTotal')),
+       totals:[{label:'Tạm tính',value:o.Subtotal},{label:'Chiết khấu',value:o.Discount},{label:'VAT',value:o.VAT},{label:'TỔNG CỘNG',value:o.TotalAmount,bold:true},{label:'Đã trả',value:o.PaidAmount},{label:'Còn nợ',value:o.PayableAmount}], note:o.Notes}; }
+  else if(kind==='quote'){ const r=await detailGet('getQuoteDetail',id); if(!r.success){closeModal();return toast(r.message,'error');} const o=r.data.quote||{};
+    const customers=await load('customers','getCustomers'); const c=(customers||[]).find(x=>x.CustomerID===o.CustomerID)||{};
+    d={code:id, docType:docTitleOf('quote'), dateLabel:'Ngày', date:o.QuoteDate, partyLabel:'Khách hàng', partyName:o.CustomerName, partyId:o.CustomerID, showQR:true, total:o.TotalAmount, payAmount:o.TotalAmount,
+       partyPhone:c.Phone||'', partyEmail:c.Email||'', partyAddress:c.Address||'', partyTax:c.TaxCode||'', signLabel:'Khách hàng',
+       items:(r.data.items||[]).map(it=>docItem(it,'SalePrice','LineTotal')),
+       totals:[{label:'Tạm tính',value:o.Subtotal},{label:'Chiết khấu',value:o.Discount},{label:'VAT',value:o.VAT},{label:'TỔNG CỘNG',value:o.TotalAmount,bold:true}], note:o.Notes}; }
+  if(d && d.showQR){
+    // Chỉ gợi ý tài khoản NGÂN HÀNG có QR (khách trả tiền mặt thì không lấy quỹ tiền mặt làm QR)
+    const banks=bankAccounts().filter(accountHasQr);
+    const paid=banks.find(a=>String(a.AccountID)===String(d.qrAccountId||''));
+    d.qrAccountId = paid ? paid.AccountID
+      : ((banks.find(a=>financeBool(a.IsDefault))||banks[0]||{}).AccountID||'');
+    await docLoadQr(d);
+  }
+  try{
+    const logoUrl=(STATE.init&&STATE.init.settings&&STATE.init.settings.LogoUrl)||'';
+    if(logoUrl){
+      const lr=await gas('getImageDataUrl', logoUrl);
+      if(lr&&lr.success&&lr.data&&lr.data.dataUrl) d.logoDataUrl=lr.data.dataUrl;
+    }
+  }catch(e){ console.warn('[openDocModal]', (e && e.message) || String(e)); }
+  DOC.d=d; DOC.opts={title: d.docType, showPrice: true, showQR: true, showParty: true, showNote: true};
+  let email=''; if(d.partyId){ const c=(STATE.cache.customers||[]).find(x=>x.CustomerID===d.partyId); if(c) email=c.Email||''; }
+  $('#modalBox').innerHTML=modalShell({title:'In / Gửi chứng từ', subtitle:d.docType+' '+d.code, icon:'print',
+    body: '<div class="flex flex-col md:flex-row gap-6">'
+      + '<div class="w-full md:w-1/3 space-y-4">'
+      + field('Khổ giấy / máy in', '<select id="docSize" onchange="updateDocPreview()" class="fld"><option value="A4">A4</option><option value="A5">A5</option><option value="K80">Máy in nhiệt K80 (80mm)</option></select>')
+      + field('Tiêu đề chứng từ', '<input type="text" id="docTitleOpt" value="'+esc(d.docType)+'" oninput="DOC.opts.title=this.value; updateDocPreview()" class="fld"/>')
+      + field('Email người nhận (để gửi)', inp('docEmail','email@khachhang.com','email', email))
+      + (d.showQR ? docQrAccountField(d) : '')
+      + '<div class="mt-5 p-4 rounded-xl border border-line bg-bg space-y-3">'
+      + '<label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked onchange="DOC.opts.showPrice=this.checked; updateDocPreview()" class="form-checkbox text-brand-600 rounded border-stroke w-4 h-4"/><span class="text-[13px] text-ink">Hiển thị đơn giá & thành tiền</span></label>'
+      + '<label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked onchange="DOC.opts.showQR=this.checked; updateDocPreview()" class="form-checkbox text-brand-600 rounded border-stroke w-4 h-4"/><span class="text-[13px] text-ink">Hiển thị mã QR thanh toán</span></label>'
+      + '<label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked onchange="DOC.opts.showParty=this.checked; updateDocPreview()" class="form-checkbox text-brand-600 rounded border-stroke w-4 h-4"/><span class="text-[13px] text-ink">Hiển thị thông tin đối tác</span></label>'
+      + '<label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked onchange="DOC.opts.showNote=this.checked; updateDocPreview()" class="form-checkbox text-brand-600 rounded border-stroke w-4 h-4"/><span class="text-[13px] text-ink">Hiển thị ghi chú</span></label>'
+      + '</div>'
+      + '</div>'
+      + '<div class="w-full md:w-2/3 bg-gray-100 p-4 rounded-xl max-h-[65vh] overflow-y-auto border border-line flex justify-center">'
+      + '<div style="width:100%;max-width:210mm;background:#fff;min-height:297mm;box-shadow:0 1px 3px rgba(0,0,0,0.1);padding:0"><iframe id="docPreviewFrame" style="width:100%;height:297mm;border:none"></iframe></div>'
+      + '</div></div>',
+    footer: btnSecondary('In','docPrint()','print')+btnSecondary('Tải PDF','docPdf()','download')+btnPrimary('Gửi email','docEmail()','send')}, 1000);
+  setTimeout(updateDocPreview, 50);
+};
+V223_IMPL["docLoadQr__10328"] = async function(d){
+  d.bankQrDataUrl=''; d.bankQrUrl='';
+  try{
+    const qr=await gas('getBankQrDataUrl', d.code, d.payAmount||d.total||0, d.qrAccountId||'');
+    if(qr&&qr.success&&qr.data){ d.bankQrDataUrl=qr.data.dataUrl||''; d.bankQrUrl=qr.data.url||''; }
+  }catch(e){ console.warn('[docLoadQr]', (e && e.message) || String(e)); }
+  // Dự phòng: nếu backend chưa deploy kịp, vẫn dựng URL phía client
+  if(!d.bankQrDataUrl && !d.bankQrUrl && d.qrAccountId){
+    const a=financeAccounts(false).find(x=>String(x.AccountID)===String(d.qrAccountId));
+    if(a) d.bankQrUrl=buildAccountQrUrl(a, d.code, d.payAmount||d.total||0);
+  }
+};
+V223_IMPL["docQrChanged__10350"] = async function(accountId){
+  if(!DOC.d) return;
+  DOC.d.qrAccountId=accountId||'';
+  const sel=$('#docQrAccount'); if(sel) sel.disabled=true;
+  await docLoadQr(DOC.d);
+  if(sel) sel.disabled=false;
+  updateDocPreview();
+};
+V223_IMPL["docPdf__10385"] = async function(){ toast('Đang tạo PDF...','info'); const r=await gas('docToPdf', curDocHtml(), DOC.d.code); if(r.success){ const a=document.createElement('a'); a.href='data:application/pdf;base64,'+r.data.base64; a.download=r.data.filename; document.body.appendChild(a); a.click(); a.remove(); toast('Đã tạo PDF'); } else toast(r.message,'error'); };
+V223_IMPL["docEmail__10386"] = async function(){ const to=$('#docEmail').value; if(!to) return toast('Nhập email người nhận','error'); toast('Đang gửi email...','info'); const r=await gas('emailDoc', curDocHtml(), DOC.d.docType+' '+DOC.d.code, to, DOC.d.code, 'Kính gửi quý khách, vui lòng xem chứng từ đính kèm. Trân trọng.'); if(r.success){toast(r.message);closeModal();} else toast(r.message,'error'); };
+V223_IMPL["renderFormulasTab__10414"] = async function(){
+  const body=$('#tabBody'); if(!body) return;
+  body.innerHTML=loadingBlock();
+  const [pr,cr]=await Promise.all([gas('getPriceFormulaTemplates'),gas('getCostFormulaTemplates')]);
+  if(!body.isConnected) return;
+  const prices=(pr&&pr.success&&pr.data)||[], costs=(cr&&cr.success&&cr.data)||[];
+  body.innerHTML=
+    '<div class="rounded-2xl border border-line bg-bg p-4 mb-5 flex items-start gap-3">'
+    +'<span class="ms text-brand-600 text-[20px] shrink-0">functions</span><div class="text-[12px] text-ink leading-relaxed">'
+    +'<b>Giá bán</b> = Trọng lượng × Số lượng × Đơn giá bán. &nbsp;·&nbsp; <b>Giá gốc</b> = tổng các dòng chi phí (Sắt + Hàn + Sơn + Phụ phí + Xe + Bốc xếp + Gia công…).<br>'
+    +'<span class="text-muted">Lợi nhuận gộp = Giá bán − Giá gốc. Tỷ suất = Lợi nhuận / Giá bán.</span></div></div>'
+
+    +'<div class="flex items-center justify-between mb-3"><h3 class="font-semibold text-ink flex items-center gap-2"><span class="ms text-sky-600">sell</span>Công thức giá bán</h3>'
+    +btnPrimary('Thêm công thức giá bán','openPriceFormulaModal()','add')+'</div>'
+    +card('<div class="p-5">'+dataTable([
+      {label:'Tên công thức',key:'FormulaName'},
+      {label:'Áp dụng cho',render:f=>scopeLabel(f)},
+      {label:'Kiểu tính',render:f=>esc(priceTypeLabel(f.CalculationType))},
+      {label:'Trọng lượng',right:true,render:f=>fmtNum(f.DefaultWeight)},
+      {label:'Số lượng',right:true,render:f=>fmtNum(f.DefaultQuantity)},
+      {label:'Đơn giá bán',right:true,render:f=>fmtVND(f.DefaultUnitPrice)},
+      {label:'Trạng thái',render:f=>badge(f.Status||'Đang dùng')},
+      {label:'',right:true,render:f=>actCell([
+        {icon:'edit',onclick:"openPriceFormulaModal('"+f.PriceFormulaID+"')",color:'text-brand-600',title:'Sửa'},
+        {icon:'delete',onclick:"confirmDeletePriceFormula('"+f.PriceFormulaID+"')",color:'text-rose-500',title:'Xóa'}])}
+    ], prices, {empty:'Chưa có công thức giá bán'})+'</div>')
+
+    +'<div class="flex items-center justify-between mb-3 mt-6"><h3 class="font-semibold text-ink flex items-center gap-2"><span class="ms text-orange-600">receipt_long</span>Công thức giá gốc</h3>'
+    +btnPrimary('Thêm công thức giá gốc','openCostFormulaModal()','add')+'</div>'
+    +card('<div class="p-5">'+dataTable([
+      {label:'Tên công thức',key:'FormulaName'},
+      {label:'Áp dụng cho',render:f=>scopeLabel(f)},
+      {label:'Số dòng chi phí',right:true,render:f=>fmtNum(f.LineCount)},
+      {label:'Tổng giá gốc mẫu',right:true,render:f=>'<b class="text-orange-600">'+fmtVND(f.TotalCost)+'</b>'},
+      {label:'Trạng thái',render:f=>badge(f.Status||'Đang dùng')},
+      {label:'',right:true,render:f=>actCell([
+        {icon:'edit',onclick:"openCostFormulaModal('"+f.FormulaID+"')",color:'text-brand-600',title:'Sửa'},
+        {icon:'delete',onclick:"confirmDeleteCostFormula('"+f.FormulaID+"')",color:'text-rose-500',title:'Xóa'}])}
+    ], costs, {empty:'Chưa có công thức giá gốc'})+'</div>');
+};
+V223_IMPL["openPriceFormulaModal__10457"] = async function(id){
+  await load('products','getProducts');
+  let f={ApplyScope:'Manual',CalculationType:'WeightQtyUnitPrice',DefaultWeight:0,DefaultQuantity:0,DefaultUnitPrice:0,Status:'Đang dùng'};
+  if(id){ const r=await gas('getPriceFormulaDetail',id); if(!r.success) return toast(r.message,'error'); f=r.data.formula; }
+  PF_EDIT={id:id||'', formula:f};
+  const prods=(STATE.cache.products||[]).filter(p=>!isServiceProd(p));
+  const cats=[...new Set(prods.map(p=>p.Category).filter(Boolean))];
+  const body='<div class="space-y-4">'
+    +field('Tên công thức *','<input id="pfName" value="'+esc(f.FormulaName||'')+'" class="fld" placeholder="VD: Giá bán theo trọng lượng"/>')
+    +row2(field('Áp dụng cho','<select id="pfScope" onchange="pfScopeChanged()" class="fld">'
+        +['Manual|Thủ công (chọn khi tạo lệnh)','Product|Một sản phẩm','Category|Một nhóm hàng'].map(o=>{const[v,l]=o.split('|');return '<option value="'+v+'" '+(f.ApplyScope===v?'selected':'')+'>'+l+'</option>';}).join('')+'</select>'),
+      '<div id="pfScopeTarget">'+pfScopeTargetHtml(f,prods,cats)+'</div>')
+    +field('Kiểu tính','<select id="pfType" onchange="pfPreview()" class="fld">'+PRICE_TYPES.map(x=>'<option value="'+x[0]+'" '+(f.CalculationType===x[0]?'selected':'')+'>'+esc(x[1])+'</option>').join('')+'</select>')
+    +'<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">'
+      +'<div>'+field('Trọng lượng mặc định','<input id="pfWeight" oninput="pfPreview()" value="'+esc(f.DefaultWeight||0)+'" class="fld"/>')+'</div>'
+      +'<div>'+field('Số lượng mặc định','<input id="pfQty" oninput="pfPreview()" value="'+esc(f.DefaultQuantity||0)+'" class="fld"/>')+'</div>'
+      +'<div>'+field('Đơn giá bán mặc định','<input id="pfPrice" inputmode="numeric" oninput="moneyFmt(this);pfPreview()" value="'+(f.DefaultUnitPrice?fmtNum(f.DefaultUnitPrice):'')+'" class="fld"/>')+'</div>'
+    +'</div>'
+    +'<div id="pfFormulaWrap" class="hidden">'+field('Công thức tùy chỉnh','<input id="pfFormula" oninput="pfPreview()" value="'+esc(f.Formula||'')+'" class="fld" placeholder="weight * quantity * unitPrice"/>',FORMULA_HINT)+'</div>'
+    +'<div class="rounded-2xl border border-sky-200 bg-sky-50 p-4"><div class="text-[12px] font-semibold text-sky-900 mb-1 flex items-center gap-1.5"><span class="ms text-[16px]">calculate</span>Xem trước giá bán</div><div id="pfPreviewBox" class="text-[13px] text-sky-900"></div></div>'
+    +field('Ghi chú','<input id="pfNotes" value="'+esc(f.Notes||'')+'" class="fld"/>')
+    +'</div>';
+  openModal(modalShell({title:id?'Sửa công thức giá bán':'Thêm công thức giá bán',subtitle:'Giá bán = Trọng lượng × Số lượng × Đơn giá bán',icon:'sell',body:body,
+    footer:btnSecondary('Hủy','closeModal()','close')+btnPrimary(id?'Lưu thay đổi':'Tạo công thức','savePriceFormula()','save')}),680);
+  pfScopeChanged(f); 
+  pfPreview();
+};
+V223_IMPL["pfPreview__10555"] = async function(){
+  const d=pfFormData();
+  const wrap=$('#pfFormulaWrap'); if(wrap) wrap.classList.toggle('hidden',d.CalculationType!=='CustomFormula');
+  const box=$('#pfPreviewBox'); if(!box) return;
+  const r=await gas('calculateSellingPrice',{CalculationType:d.CalculationType,Weight:d.DefaultWeight,Quantity:d.DefaultQuantity,UnitPrice:d.DefaultUnitPrice,SellingPrice:d.DefaultUnitPrice,Formula:d.Formula});
+  if(!box.isConnected) return;
+  if(!r||!r.success){ box.innerHTML='<span class="text-rose-600 font-medium">'+esc((r&&r.message)||'Không tính được')+'</span>'; return; }
+  let expr='';
+  if(d.CalculationType==='WeightQtyUnitPrice') expr=fmtNum(d.DefaultWeight)+' × '+fmtNum(d.DefaultQuantity)+' × '+fmtVND(d.DefaultUnitPrice);
+  else if(d.CalculationType==='QtyUnitPrice') expr=fmtNum(d.DefaultQuantity)+' × '+fmtVND(d.DefaultUnitPrice);
+  else if(d.CalculationType==='ManualPrice') expr='Nhập tay';
+  else expr=esc(d.Formula||'—');
+  box.innerHTML='<span class="text-sky-700">Giá bán = '+expr+' = </span><b class="text-[18px]">'+fmtVND(r.data.SellingPrice)+'</b>';
+};
+V223_IMPL["savePriceFormula__10569"] = async function(){
+  const d=pfFormData();
+  if(!d.FormulaName) return toast('Nhập tên công thức','error');
+  if(d.ApplyScope==='Product'&&!d.ProductID) return toast('Chọn sản phẩm áp dụng','error');
+  if(d.ApplyScope==='Category'&&!d.Category) return toast('Chọn nhóm hàng áp dụng','error');
+  if(SAVING)return; setSaving(true);
+  const r=await gas('savePriceFormulaTemplate',d); setSaving(false);
+  if(r&&r.success){ toast(r.message); closeModal(); renderFormulasTab(); } else toast((r&&r.message)||'Lưu thất bại','error');
+};
+V223_IMPL["openCostFormulaModal__10590"] = async function(id){
+  await load('products','getProducts');
+  let f={ApplyScope:'Manual',Status:'Đang dùng'}, rows=[];
+  if(id){ const r=await gas('getCostFormulaDetail',id); if(!r.success) return toast(r.message,'error'); f=r.data.formula; rows=r.data.lines.map(l=>Object.assign(cfBlankRow(),l)); }
+  if(!rows.length) rows=[
+    Object.assign(cfBlankRow(),{CostName:'Sắt',CostGroup:'Nguyên vật liệu'}),
+    Object.assign(cfBlankRow(),{CostName:'Hàn',CostGroup:'Nhân công'}),
+    Object.assign(cfBlankRow(),{CostName:'Sơn',CostGroup:'Sơn'}),
+    Object.assign(cfBlankRow(),{CostName:'Phụ phí',CostGroup:'Phụ phí'}),
+    Object.assign(cfBlankRow(),{CostName:'Xe',CostGroup:'Vận chuyển'}),
+    Object.assign(cfBlankRow(),{CostName:'Bốc xếp',CostGroup:'Vận chuyển'}),
+    Object.assign(cfBlankRow(),{CostName:'Gia công',CostGroup:'Gia công'})
+  ];
+  CF_EDIT={id:id||'',rows:rows};
+  const prods=(STATE.cache.products||[]).filter(p=>!isServiceProd(p));
+  const cats=[...new Set(prods.map(p=>p.Category).filter(Boolean))];
+  const body='<div class="space-y-4">'
+    +field('Tên công thức *','<input id="cfName" value="'+esc(f.FormulaName||'')+'" class="fld" placeholder="VD: Giá gốc sản xuất cơ bản"/>')
+    +row2(field('Áp dụng cho','<select id="cfScope" onchange="cfScopeChanged()" class="fld">'
+        +['Manual|Thủ công','Product|Một sản phẩm','Category|Một nhóm hàng'].map(o=>{const[v,l]=o.split('|');return '<option value="'+v+'" '+(f.ApplyScope===v?'selected':'')+'>'+l+'</option>';}).join('')+'</select>'),
+      '<div id="cfScopeTarget">'+cfScopeTargetHtml(f,prods,cats)+'</div>')
+    +field('Mô tả','<input id="cfDesc" value="'+esc(f.Description||'')+'" class="fld"/>')
+    +'<div><div class="flex items-center justify-between mb-2"><div class="text-[13px] font-semibold text-ink">Các dòng chi phí (cộng lại = Giá gốc)</div>'
+      +'<button type="button" onclick="cfAddRow()" class="text-[12px] font-semibold text-brand-600 hover:underline inline-flex items-center gap-1"><span class="ms text-[16px]">add</span>Thêm dòng</button></div>'
+      +'<div class="overflow-x-auto rounded-2xl border border-line"><table class="w-full text-[12px]" id="cfTable"><thead><tr class="bg-bg text-muted">'
+      +['Khoản mục','Nhóm chi phí','Kiểu tính','TL','SL','Đơn giá','Thành tiền','Trừ kho?','Ghi chú',''].map((h,i)=>'<th class="px-2 py-2 text-left font-semibold whitespace-nowrap'+(i>=3&&i<=6?' text-right':'')+'">'+h+'</th>').join('')
+      +'</tr></thead><tbody id="cfRows"></tbody></table></div></div>'
+    +'<div id="cfTotals"></div>'
+    +'</div>';
+  openModal(modalShell({title:id?'Sửa công thức giá gốc':'Thêm công thức giá gốc',subtitle:'Giá gốc = Sắt + Hàn + Sơn + Phụ phí + Xe + Bốc xếp + Gia công + Khác',icon:'receipt_long',body:body,
+    footer:btnSecondary('Hủy','closeModal()','close')+btnPrimary(id?'Lưu thay đổi':'Tạo công thức','saveCostFormula()','save')}),1040);
+  cfScopeChanged(); cfRenderRows();
+};
+V223_IMPL["cfCalc__10672"] = async function(){
+  const box=$('#cfTotals'); if(!box) return;
+  const r=await gas('calculateCostLines',{ProductionQty:1,lines:CF_EDIT.rows.filter(x=>String(x.CostName||'').trim()).map(x=>({
+    CostName:x.CostName,CostGroup:x.CostGroup,CalculationType:x.CalculationType,Weight:pnum(x.Weight),Quantity:pnum(x.Quantity),
+    UnitPrice:pnum(x.UnitPrice),Percent:pnum(x.Percent),Formula:x.Formula,Amount:pnum(x.Amount)}))});
+  if(!box.isConnected) return;
+  if(!r||!r.success){ box.innerHTML='<div class="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-[12px] text-rose-700">'+esc((r&&r.message)||'Không tính được')+'</div>'; return; }
+  const g=r.data.byGroup||{};
+  const grp=(names)=>names.reduce((s,n)=>s+(Number(g[n])||0),0);
+  box.innerHTML='<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">'
+    +miniStat('Tổng nguyên vật liệu',fmtVND(grp(['Nguyên vật liệu'])))
+    +miniStat('Tổng nhân công',fmtVND(grp(['Nhân công'])))
+    +miniStat('Sơn / Gia công / Phụ phí / Vận chuyển',fmtVND(grp(['Sơn','Gia công','Phụ phí','Vận chuyển'])))
+    +'<div class="rounded-xl border border-orange-200 bg-orange-50 p-3"><div class="text-[11px] text-orange-700 mb-0.5">TỔNG GIÁ GỐC</div><div class="text-[16px] font-bold text-orange-700">'+fmtVND(r.data.total)+'</div></div>'
+    +'</div>';
+  CF_EDIT.rows.forEach((row,i)=>{ const el=$('#cfAmt'+i); if(el&&r.data.lines[i]) el.textContent=fmtVND(r.data.lines[i].Amount); });
+};
+V223_IMPL["saveCostFormula__10689"] = async function(){
+  const name=($('#cfName')||{}).value||'';
+  if(!name) return toast('Nhập tên công thức','error');
+  const scope=($('#cfScope')||{}).value||'Manual';
+  if(scope==='Product'&&!($('#cfProduct')||{}).value) return toast('Chọn sản phẩm áp dụng','error');
+  if(scope==='Category'&&!($('#cfCategory')||{}).value) return toast('Chọn nhóm hàng áp dụng','error');
+  const lines=CF_EDIT.rows.filter(x=>String(x.CostName||'').trim()).map(x=>({
+    CostName:x.CostName,CostGroup:x.CostGroup,CalculationType:x.CalculationType,Weight:pnum(x.Weight),Quantity:pnum(x.Quantity),
+    UnitPrice:pnum(x.UnitPrice),Percent:pnum(x.Percent),Formula:x.Formula,Amount:pnum(x.Amount),IsStockDeduct:!!x.IsStockDeduct,
+    ProductID:x.ProductID||'',Notes:x.Notes||''}));
+  if(!lines.length) return toast('Thêm ít nhất 1 dòng chi phí','error');
+  if(SAVING)return; setSaving(true);
+  const r=await gas('saveCostFormulaTemplate',{FormulaID:CF_EDIT.id||'',FormulaName:name,ApplyScope:scope,
+    ProductID:($('#cfProduct')||{}).value||'',Category:($('#cfCategory')||{}).value||'',Description:($('#cfDesc')||{}).value||'',lines:lines});
+  setSaving(false);
+  if(r&&r.success){ toast(r.message); closeModal(); renderFormulasTab(); } else toast((r&&r.message)||'Lưu thất bại','error');
+};
+V223_IMPL["prodFormulaPreview__10716"] = async function() {
+  const box = $('#poFormulaBox');
+  if (!box) return;
+
+  const pid = PROD_ORDER.productId;
+  const qty = Math.max(1, Number(($('#poQty') || {}).value) || 1);
+
+  if (!pid) {
+    box.innerHTML = '';
+    return;
+  }
+
+  box.innerHTML =
+    '<div class="text-[12px] text-muted py-2 flex items-center gap-2">' +
+    '<span class="ms animate-spin text-[16px]">progress_activity</span>' +
+    'Đang tìm công thức giá bán / giá gốc...' +
+    '</div>';
+
+  const r = await gas('getProductionFormulaPreview', pid, qty);
+  if (!box.isConnected) return;
+
+  if (!r || !r.success) {
+    box.innerHTML =
+      '<div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[12px] text-rose-700">' +
+      'Không tải được công thức giá bán / giá gốc. Lệnh vẫn có thể chạy theo BOM cũ.' +
+      '</div>';
+    return;
+  }
+
+  const p = r.data.price;
+  const c = r.data.cost;
+
+  if (!p && !c) {
+    box.innerHTML =
+      '<div class="rounded-2xl border border-dashed border-amber-300 bg-amber-50 px-4 py-4 text-[12px] text-amber-800">' +
+        '<div class="flex items-start gap-3">' +
+          '<span class="ms text-amber-600 text-[20px] shrink-0">info</span>' +
+          '<div class="min-w-0 flex-1">' +
+            '<div class="font-semibold text-amber-900 mb-1">Thành phẩm này chưa có công thức giá bán / giá gốc</div>' +
+            '<div class="leading-relaxed">' +
+              'Lệnh sản xuất sẽ tính theo <b>BOM/định mức cũ</b>. Công thức mới chỉ tự áp dụng khi sản phẩm hoặc nhóm hàng đã được gán công thức.' +
+            '</div>' +
+            '<div class="mt-3 flex flex-wrap gap-2">' +
+              '<button type="button" onclick="openPriceFormulaModal()" class="px-3 py-2 rounded-xl bg-white border border-amber-200 text-amber-800 text-[12px] font-semibold hover:bg-amber-100 inline-flex items-center gap-1">' +
+                '<span class="ms text-[16px]">sell</span>Tạo công thức giá bán' +
+              '</button>' +
+              '<button type="button" onclick="openCostFormulaModal()" class="px-3 py-2 rounded-xl bg-white border border-amber-200 text-amber-800 text-[12px] font-semibold hover:bg-amber-100 inline-flex items-center gap-1">' +
+                '<span class="ms text-[16px]">receipt_long</span>Tạo công thức giá gốc' +
+              '</button>' +
+              '<button type="button" onclick="closeModal();openProductModal(\'' + esc(pid) + '\')" class="px-3 py-2 rounded-xl bg-amber-600 text-white text-[12px] font-semibold hover:bg-amber-700 inline-flex items-center gap-1">' +
+                '<span class="ms text-[16px]">link</span>Gán công thức cho sản phẩm' +
+              '</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    return;
+  }
+
+  const priceBox = p
+    ? '<div class="rounded-2xl border border-sky-200 bg-sky-50 p-4 min-w-0">' +
+        '<div class="text-[12px] font-semibold text-sky-900 mb-2 flex items-center gap-1.5">' +
+          '<span class="ms text-[16px]">sell</span>Công thức giá bán · ' + esc(p.formula.FormulaName) +
+        '</div>' +
+        '<div class="text-[12px] text-sky-800 leading-relaxed mb-2">' +
+          'Giá bán = Trọng lượng × Số lượng × Đơn giá bán' +
+        '</div>' +
+        '<div class="text-[12px] text-sky-800 space-y-0.5">' +
+          '<div>Trọng lượng: <b>' + fmtNum(p.formula.DefaultWeight) + '</b></div>' +
+          '<div>Số lượng: <b>' + fmtNum(p.formula.DefaultQuantity) + '</b></div>' +
+          '<div>Đơn giá bán: <b>' + fmtVND(p.formula.DefaultUnitPrice) + '</b></div>' +
+        '</div>' +
+        '<div class="mt-2 pt-2 border-t border-sky-200 text-[13px] text-sky-900">' +
+          'Giá bán dự kiến: <b class="text-[16px]">' + fmtVND(p.SellingPrice) + '</b>' +
+        '</div>' +
+      '</div>'
+    : '<div class="rounded-2xl border border-dashed border-stroke bg-bg p-4 text-[12px] text-muted">' +
+        '<div class="font-semibold text-ink mb-1">Chưa có công thức giá bán</div>' +
+        '<div>Giá bán sẽ không tự tính theo trọng lượng × số lượng × đơn giá cho đến khi bạn tạo/gán công thức.</div>' +
+        '<button type="button" onclick="openPriceFormulaModal()" class="mt-3 px-3 py-2 rounded-xl bg-white border border-stroke text-brand-600 text-[12px] font-semibold hover:bg-brand-50 inline-flex items-center gap-1">' +
+          '<span class="ms text-[16px]">sell</span>Tạo công thức giá bán' +
+        '</button>' +
+      '</div>';
+
+  const costBox = c
+    ? '<div class="rounded-2xl border border-orange-200 bg-orange-50 p-4 min-w-0">' +
+        '<div class="text-[12px] font-semibold text-orange-900 mb-2 flex items-center gap-1.5">' +
+          '<span class="ms text-[16px]">receipt_long</span>Công thức giá gốc · ' + esc(c.formula.FormulaName) +
+        '</div>' +
+        '<div class="text-[12px] text-orange-800 leading-relaxed mb-2">' +
+          'Giá gốc = Tổng các dòng chi phí sản xuất' +
+        '</div>' +
+        '<div class="text-[12px] text-orange-800 space-y-0.5 max-h-[132px] overflow-y-auto pr-1">' +
+          (c.lines || []).map(l =>
+            '<div class="flex justify-between gap-3">' +
+              '<span class="truncate">' + esc(l.CostName) + '</span>' +
+              '<b class="whitespace-nowrap">' + fmtVND(l.Amount) + '</b>' +
+            '</div>'
+          ).join('') +
+        '</div>' +
+        '<div class="mt-2 pt-2 border-t border-orange-200 text-[13px] text-orange-900">' +
+          'Tổng giá gốc dự kiến: <b class="text-[16px]">' + fmtVND(c.total) + '</b>' +
+        '</div>' +
+      '</div>'
+    : '<div class="rounded-2xl border border-dashed border-stroke bg-bg p-4 text-[12px] text-muted">' +
+        '<div class="font-semibold text-ink mb-1">Chưa có công thức giá gốc</div>' +
+        '<div>Giá gốc sẽ tính theo BOM/định mức cũ cho đến khi bạn tạo/gán công thức giá gốc.</div>' +
+        '<button type="button" onclick="openCostFormulaModal()" class="mt-3 px-3 py-2 rounded-xl bg-white border border-stroke text-brand-600 text-[12px] font-semibold hover:bg-brand-50 inline-flex items-center gap-1">' +
+          '<span class="ms text-[16px]">receipt_long</span>Tạo công thức giá gốc' +
+        '</button>' +
+      '</div>';
+
+  box.innerHTML =
+    '<div class="rounded-2xl border border-line bg-white p-4 mt-3">' +
+      '<div class="flex items-start gap-3 mb-3">' +
+        '<span class="ms text-brand-600 text-[20px] shrink-0">functions</span>' +
+        '<div class="text-[12px] text-ink leading-relaxed">' +
+          '<b>Giá bán</b> = Trọng lượng × Số lượng × Đơn giá bán. ' +
+          '<b>Giá gốc</b> = tổng chi phí như sắt, hàn, sơn, phụ phí, xe, bốc xếp, gia công. ' +
+          '<span class="text-muted">Công thức chỉ tự áp dụng khi đã gán cho sản phẩm hoặc nhóm hàng.</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="grid grid-cols-1 md:grid-cols-2 gap-3">' + priceBox + costBox + '</div>' +
+    '</div>';
+};
+V223_IMPL["proToggleHints__11309"] = async function(on) {
+  const val = on ? 'true' : 'false';
+  if (typeof SET_DRAFT === 'object' && SET_DRAFT) SET_DRAFT.ShowUpgradeHints = val;
+  if (typeof SET_DATA === 'object' && SET_DATA) SET_DATA.ShowUpgradeHints = val;
+  if (STATE.init && STATE.init.settings) STATE.init.settings.ShowUpgradeHints = val;
+  try { stGo('upgrade'); } catch (e) { console.warn('[proToggleHints]', (e && e.message) || String(e));  }
+  const r = await gas('saveSettings', { ShowUpgradeHints: val });
+  if (!r.success) { console.error('[proToggleHints]', r); return toast(r.message, 'error'); }
+  toast(on ? 'Đã bật gợi ý nâng cấp' : 'Đã tắt gợi ý nâng cấp trong toàn bộ phần mềm');
+};
+V223_IMPL["cfmLoad__12060"] = async function(force) {
+  if (CFM.loaded && !force) return true;
+  CFM.error = '';
+  const r = await gas('getCodeFormats');
+  if (!r.success) {
+    /* Thường gặp khi WebApp còn chạy bản Code.gs cũ. Không bắn báo đỏ liên tục,
+       mà hiện hướng dẫn ngay trong mục để người dùng biết phải làm gì. */
+    CFM.error = r.message || 'Không tải được mẫu mã chứng từ.';
+    return false;
+  }
+  CFM.entities = (r.data.entities || []).map(e => Object.assign({}, e));
+  CFM.tokens = r.data.tokens || [];
+  CFM.resetOptions = r.data.resetOptions || [];
+  CFM.loaded = true;
+  return true;
+};
+V223_IMPL["openCodeFormatModal__12078"] = async function() {
+  openModalLoading('Thiết lập mẫu mã chứng từ', 'tag', 900);
+  CFM.host = 'modal'; CFM.focusKey = '';
+  if (!await cfmLoad(true)) {
+    const mb = $('#modalBox');
+    if (mb) mb.innerHTML = modalShell({ title: 'Thiết lập mẫu mã chứng từ', icon: 'tag', body: cfmErrorHtml(CFM.error), footer: btnSecondary('Đóng', 'closeModal()', 'close') });
+    return;
+  }
+  cfmRepaint();
+};
+V223_IMPL["cfmRenderInline__12100"] = async function() {
+  CFM.host = 'inline'; CFM.focusKey = '';
+  const box0 = document.getElementById('cfmInline');
+  if (box0) box0.innerHTML = '<div class="text-[13px] text-muted py-6 text-center">Đang tải mẫu mã chứng từ...</div>';
+  if (!await cfmLoad()) {
+    const box = document.getElementById('cfmInline');
+    if (box) box.innerHTML = cfmErrorHtml(CFM.error);
+    return;
+  }
+  cfmRepaint();
+};
+V223_IMPL["cfmSave__12214"] = async function() {
+  const bad = CFM.entities.filter(e => e.enabled && cfmValidate(e.template));
+  if (bad.length) return toast('Còn ' + bad.length + ' mẫu mã chưa hợp lệ: ' + bad.map(b => b.label).join(', '), 'error');
+  if (SAVING) return; setSaving(true);
+  nxSync('Đang lưu mẫu mã...');
+  const payload = CFM.entities.map(e => ({ key: e.key, template: e.template, resetBy: e.resetBy, enabled: !!e.enabled }));
+  const r = await gas('saveCodeFormats', payload);
+  setSaving(false); nxSync('');
+  if (!r.success) { console.error('[saveCodeFormats]', r); return toast(r.message, 'error'); }
+  toast(r.message);
+  if (CFM.host === 'inline') { await cfmLoad(true); cfmRepaint(); }
+  else closeModal();
+};
+V223_IMPL["cfmDoResetSeq__12240"] = async function(key) {
+  const val = Number(($('#cfmSeqVal') || {}).value || 0);
+  if (SAVING) return; setSaving(true);
+  const r = await gas('resetCodeSequence', key, val);
+  setSaving(false);
+  if (!r.success) return toast(r.message, 'error');
+  toast(r.message);
+  if (CFM.host === 'inline') { closeModal(); await cfmLoad(true); cfmRepaint(); }
+  else openCodeFormatModal();
+};
+V223_IMPL["loadAccessUsers__12684"] = async function() {
+  if (!ACCESS_META) {
+    const m = await gas('getAuthMeta');
+    if (m && m.success) ACCESS_META = m.data;
+  }
+  const r = await gas('getUsers');
+  const host = $('#accUsers'); if (!host) return;
+  if (!r || !r.success) { host.innerHTML = '<div class="text-[13px] text-rose-600">' + esc((r && r.message) || 'Không tải được danh sách người dùng') + '</div>'; return; }
+  ACCESS_USERS = r.data || [];
+  host.innerHTML = accUsersHtml();
+};
+V223_IMPL["saveUserForm__12854"] = async function() {
+  const id = ($('#usrId') || {}).value || '';
+  const data = {
+    FullName: ($('#usrName') || {}).value || '',
+    Email: ($('#usrEmail') || {}).value || '',
+    Username: ($('#usrLogin') || {}).value || '',
+    Role: ($('#usrRole') || {}).value || 'Nhân viên',
+    Permissions: harvestUserPerms()
+  };
+  const pass = ($('#usrPass') || {}).value || '';
+  if (!data.FullName.trim()) return toast('Vui lòng nhập họ tên', 'error');
+  if (!id && !data.Username.trim()) return toast('Vui lòng nhập tên đăng nhập', 'error');
+  if (!id && pass.length < 4) return toast('Mật khẩu phải từ 4 ký tự trở lên', 'error');
+  if (pass) data.Password = pass;
+  if (SAVING) return; setSaving(true);
+  const r = id ? await gas('updateUser', id, data) : await gas('createUser', data);
+  setSaving(false);
+  if (!r || !r.success) return toast((r && r.message) || 'Không lưu được tài khoản', 'error');
+  toast(id ? 'Đã cập nhật tài khoản' : 'Đã tạo tài khoản');
+  closeModal();
+  await loadAccessUsers();
+};
+V223_IMPL["saveUserPassword__12887"] = async function() {
+  const id = ($('#rpwId') || {}).value || '';
+  const pw = ($('#rpwPass') || {}).value || '';
+  if (pw.length < 4) return toast('Mật khẩu phải từ 4 ký tự trở lên', 'error');
+  if (SAVING) return; setSaving(true);
+  const r = await gas('resetUserPassword', id, pw);
+  setSaving(false);
+  if (!r || !r.success) return toast((r && r.message) || 'Không đặt lại được mật khẩu', 'error');
+  toast(r.message || 'Đã đặt lại mật khẩu');
+  closeModal();
+};
+V223_IMPL["toggleUserLock__12899"] = async function(userId) {
+  const u = ACCESS_USERS.filter(x => String(x.UserID) === String(userId))[0];
+  if (!u) return;
+  const locked = String(u.Status || '').indexOf('khoá') >= 0 || String(u.Status || '').indexOf('khóa') >= 0;
+  const r = await gas('updateUser', userId, { Status: locked ? 'Đang hoạt động' : 'Tạm khoá' });
+  if (!r || !r.success) return toast((r && r.message) || 'Không đổi được trạng thái', 'error');
+  toast(locked ? 'Đã mở khóa tài khoản' : 'Đã tạm khóa tài khoản');
+  await loadAccessUsers();
+};
+V223_IMPL["doRemoveUser__12921"] = async function(userId) {
+  const r = await gas('deleteUser', userId);
+  if (!r || !r.success) return toast((r && r.message) || 'Không xóa được tài khoản', 'error');
+  closeModal();
+  toast('Đã xóa tài khoản');
+  await loadAccessUsers();
+};
+V223_IMPL["renderAuditTab__12951"] = async function() {
+  const body = $('#tabBody'); if (!body) return;
+  if (!canSee('audit')) { body.innerHTML = noPermHtml('Nhật ký thao tác'); return; }
+  body.innerHTML = auditFilterBar() + '<div id="auditBody">' + loadingBlock() + '</div>';
+  await loadAuditRows();
+};
+V223_IMPL["loadAuditRows__12999"] = async function() {
+  const host = $('#auditBody'); if (!host) return;
+  host.style.opacity = '.55';
+  const r = await gas('getAuditLog', {
+    user: AUDIT_FILTER.user, module: AUDIT_FILTER.module,
+    from: AUDIT_FILTER.from, to: AUDIT_FILTER.to, q: AUDIT_FILTER.q, limit: AUDIT_FILTER.limit
+  });
+  host.style.opacity = '1';
+  if (!r || !r.success) { host.innerHTML = emptyState((r && r.message) || 'Không tải được nhật ký'); return; }
+  const d = r.data || {};
+  const hadMeta = (AUDIT_META.users || []).length;
+  AUDIT_META = { users: d.users || [], modules: d.modules || [] };
+  if (!hadMeta && (AUDIT_META.users.length || AUDIT_META.modules.length)) {
+    // Lần đầu mới biết có những ai -> vẽ lại thanh lọc cho đủ lựa chọn
+    const bar = $('#tabBody');
+    if (bar) { bar.innerHTML = auditFilterBar() + '<div id="auditBody"></div>'; }
+  }
+  const rows = d.rows || [];
+  const cnt = $('#auCount');
+  if (cnt) cnt.innerHTML = 'Đang xem <b class="text-ink">' + fmtNum(d.shown || rows.length) + '</b> / ' + fmtNum(d.total || rows.length) + ' lượt thao tác'
+    + (d.total > d.shown ? ' <span class="text-muted">(mới nhất trước)</span>' : '');
+  const target = $('#auditBody');
+  if (target) target.innerHTML = auditRowsHtml(rows);
+};
+V223_IMPL["renderPosTab__13523"] = async function(tab) {
+  const body = $('#tabBody'); if (!body) return;
+  if (tab === 'shifts') return renderPosShiftsTab();
+  body.innerHTML = loadingBlock();
+  const r = await gas('getPosBootstrap');
+  if (!r || !r.success) { body.innerHTML = emptyState((r && r.message) || 'Không mở được màn hình bán hàng'); return; }
+  POS.boot = r.data || {};
+  if (!POS.vat) POS.vat = 0;
+  body.innerHTML = posScreenHtml();
+  posBindKeys();
+};
+V223_IMPL["posCheckout__13795"] = async function() {
+  if (!POS.cart.length) return toast('Giỏ hàng đang trống', 'error');
+  const total = posTotal();
+  if (POS.method === 'Tiền mặt' && Number(POS.cash) > 0 && Number(POS.cash) < total) {
+    return toast('Khách đưa chưa đủ ' + posMoney(total), 'error');
+  }
+  if (SAVING) return; setSaving(true);
+  const r = await gas('createPosOrder', {
+    items: POS.cart.map(l => ({ ProductID: l.ProductID, Quantity: l.Quantity, SalePrice: l.SalePrice })),
+    CustomerID: POS.customerId, Discount: Number(POS.discount) || 0, DiscountPercent: Number(POS.discountPct) || 0,
+    VATPercent: Number(POS.vat) || 0, Method: POS.method, CashReceived: Number(POS.cash) || 0, Notes: POS.note
+  });
+  setSaving(false);
+  if (!r || !r.success) return toast((r && r.message) || 'Không thanh toán được', 'error');
+  POS.lastBill = r.data;
+  posCloseSheet();                 // điện thoại: đóng tấm trượt trước khi hiện màn thành công
+  toast(r.message);
+  POS.cart = []; POS.discount = 0; POS.discountPct = 0; POS.cash = 0; POS.note = ''; POS.customerId = '';
+  await reprime('products', 'movements', 'sales', 'customers');
+  const boot = await gas('getPosBootstrap');
+  if (boot && boot.success) POS.boot = boot.data;
+  posRepaintAll();
+  posBillModal(r.data);
+};
+V223_IMPL["posPrintBill__13837"] = async function(salesId) {
+  closeModal();
+  await openDocModal('sales', salesId);
+  const sizeSel = $('#docSize');
+  if (sizeSel) { sizeSel.value = 'K80'; if (typeof updateDocPreview === 'function') updateDocPreview(); }
+};
+V223_IMPL["posDoOpenShift__13860"] = async function() {
+  if (SAVING) return; setSaving(true);
+  const r = await gas('openPosShift', {
+    OpeningCash: Number(($('#psOpenCash') || {}).value) || 0,
+    WarehouseID: ($('#psWarehouse') || {}).value || '',
+    AccountID: ($('#psAccount') || {}).value || '',
+    Notes: ($('#psNotes') || {}).value || ''
+  });
+  setSaving(false);
+  if (!r || !r.success) return toast((r && r.message) || 'Không mở được ca', 'error');
+  toast(r.message); closeModal();
+  await renderPosTab('sell');
+};
+V223_IMPL["posCloseShiftForm__13874"] = async function() {
+  const cur = await gas('getCurrentPosShift');
+  if (!cur || !cur.success || !cur.data) return toast('Không có ca nào đang mở', 'error');
+  const s = cur.data;
+  openModal(modalShell({
+    title: 'Đóng ca ' + esc(s.ShiftCode || ''), subtitle: 'Đếm tiền mặt thực tế rồi đối chiếu với sổ', icon: 'stop_circle',
+    body: '<div class="grid grid-cols-2 gap-2.5 mb-4">'
+      + '<div class="rounded-xl bg-bg px-4 py-3"><div class="text-[11px] text-muted">Số đơn đã bán</div><div class="text-[15px] font-bold text-ink">' + fmtNum(s.OrderCount) + '</div></div>'
+      + '<div class="rounded-xl bg-bg px-4 py-3"><div class="text-[11px] text-muted">Doanh thu ca</div><div class="text-[15px] font-bold text-ink">' + posMoney(s.TotalSales) + '</div></div>'
+      + '<div class="rounded-xl bg-bg px-4 py-3"><div class="text-[11px] text-muted">Tiền đầu ca</div><div class="text-[15px] font-bold text-ink">' + posMoney(s.OpeningCash) + '</div></div>'
+      + '<div class="rounded-xl bg-bg px-4 py-3"><div class="text-[11px] text-muted">Thu tiền mặt</div><div class="text-[15px] font-bold text-ink">' + posMoney(s.CashSales) + '</div></div>'
+      + '<div class="rounded-xl bg-bg px-4 py-3"><div class="text-[11px] text-muted">Thu chuyển khoản</div><div class="text-[15px] font-bold text-ink">' + posMoney(s.TransferSales) + '</div></div>'
+      + '<div class="rounded-xl bg-bg px-4 py-3"><div class="text-[11px] text-muted">Thu quẹt thẻ</div><div class="text-[15px] font-bold text-ink">' + posMoney(s.CardSales) + '</div></div>'
+      + '</div>'
+      + '<div class="rounded-xl bg-emerald-50 px-4 py-3 mb-4 flex items-center justify-between">'
+      + '<span class="text-[12.5px] text-emerald-700 font-semibold">Tiền mặt lẽ ra phải có trong két</span>'
+      + '<span class="text-[18px] font-bold text-emerald-800">' + posMoney(s.ExpectedCash) + '</span></div>'
+      + '<input type="hidden" id="psShiftId" value="' + esc(s.ShiftID) + '"/>'
+      + '<input type="hidden" id="psExpected" value="' + esc(s.ExpectedCash) + '"/>'
+      + field('Tiền mặt đếm được (đ)', inp('psCounted', '', 'number', Math.round(Number(s.ExpectedCash) || 0)), 'Đếm thật trong ngăn kéo rồi nhập vào đây')
+      + '<div id="psDiff" class="mb-3"></div>'
+      + field('Ghi chú cuối ca', inp('psCloseNotes', 'VD: thiếu 20.000 do thối nhầm')),
+    footer: btnSecondary('Huỷ', 'closeModal()', 'close') + btnPrimary('Đóng ca', 'posDoCloseShift()', 'stop_circle')
+  }), 560);
+  const el = $('#psCounted');
+  if (el) el.addEventListener('input', posShowDiff);
+  posShowDiff();
+};
+V223_IMPL["posDoCloseShift__13916"] = async function() {
+  if (SAVING) return; setSaving(true);
+  const r = await gas('closePosShift', ($('#psShiftId') || {}).value || '', {
+    CountedCash: Number(($('#psCounted') || {}).value) || 0,
+    Notes: ($('#psCloseNotes') || {}).value || ''
+  });
+  setSaving(false);
+  if (!r || !r.success) return toast((r && r.message) || 'Không đóng được ca', 'error');
+  toast(r.message); closeModal();
+  await renderPosTab('sell');
+};
+V223_IMPL["renderPosShiftsTab__13928"] = async function() {
+  const body = $('#tabBody'); if (!body) return;
+  body.innerHTML = loadingBlock();
+  const r = await gas('getPosShifts');
+  const list = (r && r.success) ? (r.data || []) : [];
+  body.innerHTML = filterableTable('posShifts', list, costCols([
+    { label: 'Số ca', key: 'ShiftCode' },
+    { label: 'Mở ca', key: 'OpenedAt', render: s => auditTime(s.OpenedAt) },
+    { label: 'Người mở', render: s => byCell(s.OpenedBy) },
+    { label: 'Đóng ca', key: 'ClosedAt', render: s => s.ClosedAt ? auditTime(s.ClosedAt) : '<span class="text-stroke">-</span>' },
+    { label: 'Số đơn', key: 'OrderCount', right: true, render: s => fmtNum(s.OrderCount) },
+    { label: 'Doanh thu', key: 'TotalSales', right: true, render: s => posMoney(s.TotalSales) },
+    { label: 'Tiền mặt', key: 'CashSales', right: true, render: s => posMoney(s.CashSales) },
+    { label: 'Đếm được', key: 'CountedCash', right: true, render: s => s.CountedCash === '' || s.CountedCash == null ? '<span class="text-stroke">-</span>' : posMoney(s.CountedCash) },
+    {
+      label: 'Lệch quỹ', key: 'Difference', right: true, render: s => {
+        if (s.Difference === '' || s.Difference == null) return '<span class="text-stroke">-</span>';
+        const d = Number(s.Difference) || 0;
+        if (Math.abs(d) < 0.5) return '<span class="text-emerald-600 font-semibold">Khớp</span>';
+        return '<span class="' + (d > 0 ? 'text-sky-600' : 'text-rose-600') + ' font-semibold">' + (d > 0 ? '+' : '') + posMoney(d) + '</span>';
+      }
+    },
+    { label: 'Trạng thái', key: 'Status', render: s => badge(s.Status) }
+  ]), {
+    search: ['ShiftCode', 'OpenedBy', 'ClosedBy', 'Notes'], searchPlaceholder: 'Tìm số ca, người bán...',
+    selects: [{ field: 'Status', label: 'Trạng thái' }],
+    idKey: 'ShiftID', onRowClick: 'posViewShift',
+    action: '<button type="button" onclick="selectTab(\'sell\')" class="px-4 py-2.5 rounded-xl border border-stroke text-[13px] font-semibold hover:bg-bg inline-flex items-center gap-1.5"><span class="ms text-[18px]">point_of_sale</span>Về màn hình bán</button>',
+    sorts: [{ value: 'field:OpenedAt', label: 'Thời gian mở ca' }, { value: 'field:TotalSales', label: 'Doanh thu' }]
+  });
+};
+V223_IMPL["posViewShift__13960"] = async function(shiftId) {
+  openModalLoading('Chi tiết ca bán hàng', 'point_of_sale', 720);
+  const r = await gas('getPosShiftDetail', shiftId);
+  if (!r || !r.success) { closeModal(); return toast((r && r.message) || 'Không tải được ca', 'error'); }
+  const s = r.data.shift || {}, orders = r.data.orders || [];
+  const diff = Number(s.Difference) || 0;
+  openModal(modalShell({
+    title: 'Ca ' + esc(s.ShiftCode || ''), icon: 'point_of_sale',
+    subtitle: esc(auditTime(s.OpenedAt)) + (s.ClosedAt ? ('  ->  ' + esc(auditTime(s.ClosedAt))) : ' · đang mở'),
+    body: '<div class="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-4">'
+      + '<div class="rounded-xl bg-bg px-3 py-2.5"><div class="text-[10.5px] text-muted">Số đơn</div><div class="text-[15px] font-bold text-ink">' + fmtNum(s.OrderCount) + '</div></div>'
+      + '<div class="rounded-xl bg-bg px-3 py-2.5"><div class="text-[10.5px] text-muted">Doanh thu</div><div class="text-[15px] font-bold text-ink">' + posMoney(s.TotalSales) + '</div></div>'
+      + '<div class="rounded-xl bg-bg px-3 py-2.5"><div class="text-[10.5px] text-muted">Tiền mặt</div><div class="text-[15px] font-bold text-ink">' + posMoney(s.CashSales) + '</div></div>'
+      + '<div class="rounded-xl bg-bg px-3 py-2.5"><div class="text-[10.5px] text-muted">Chuyển khoản</div><div class="text-[15px] font-bold text-ink">' + posMoney(s.TransferSales) + '</div></div>'
+      + '</div>'
+      + (s.ClosedAt ? '<div class="rounded-xl ' + (Math.abs(diff) < 0.5 ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : (diff > 0 ? 'bg-sky-50 border-sky-200 text-sky-800' : 'bg-rose-50 border-rose-200 text-rose-800'))
+        + ' border px-4 py-3 mb-4 text-[12.5px]">Lẽ ra có <b>' + posMoney(s.ExpectedCash) + '</b>, đếm được <b>' + posMoney(s.CountedCash) + '</b> — '
+        + (Math.abs(diff) < 0.5 ? 'khớp sổ.' : ((diff > 0 ? 'thừa ' : 'thiếu ') + '<b>' + posMoney(Math.abs(diff)) + '</b>.')) + '</div>' : '')
+      + (s.Notes ? '<div class="text-[12.5px] text-muted mb-3">Ghi chú: ' + esc(s.Notes) + '</div>' : '')
+      + '<div class="text-[13px] font-semibold text-ink mb-2">Đơn đã bán trong ca</div>'
+      + (orders.length ? '<div class="max-h-[280px] overflow-y-auto border border-line rounded-xl"><table class="w-full text-[12.5px]">'
+        + '<thead class="sticky top-0"><tr class="bg-bg"><th class="text-left px-3 py-2 text-muted font-semibold">Mã HĐ</th>'
+        + '<th class="text-left px-3 py-2 text-muted font-semibold">Khách</th>'
+        + '<th class="text-right px-3 py-2 text-muted font-semibold">Tổng tiền</th>'
+        + '<th class="text-right px-3 py-2 text-muted font-semibold">Còn nợ</th></tr></thead><tbody>'
+        + orders.map(o => '<tr class="border-t border-line"><td class="px-3 py-2 font-semibold text-brand-600">' + esc(o.SalesID) + '</td>'
+          + '<td class="px-3 py-2">' + esc(o.CustomerName || '') + '</td>'
+          + '<td class="px-3 py-2 text-right">' + posMoney(o.TotalAmount) + '</td>'
+          + '<td class="px-3 py-2 text-right">' + (Number(o.ReceivableAmount) ? '<span class="text-amber-600">' + posMoney(o.ReceivableAmount) + '</span>' : '<span class="text-stroke">-</span>') + '</td></tr>').join('')
+        + '</tbody></table></div>' : emptyState('Ca này chưa bán đơn nào')),
+    footer: btnSecondary('Đóng', 'closeModal()', 'close')
+  }), 720);
+};
+V223_IMPL["vatWarnDuplicate__14063"] = async function(sheetName, prefix, exceptId) {
+  const no = (($('#' + prefix + 'InvNo') || {}).value || '').trim();
+  if (!no) return true;
+  const r = await gas('checkInvoiceNo', sheetName, no, exceptId || '');
+  if (r && r.success && r.data && r.data.duplicate) {
+    toast(r.message || ('Số hóa đơn ' + no + ' đã dùng rồi'), 'error');
+    return false;
+  }
+  return true;
+};
+V223_IMPL["renderVatReportTab__14077"] = async function() {
+  const body = $('#tabBody'); if (!body) return;
+  if (!VAT_REPORT.from && !VAT_REPORT.to) {
+    const now = new Date();
+    VAT_REPORT.from = toInputDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    VAT_REPORT.to = toInputDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+  }
+  body.innerHTML = vatReportBar() + '<div id="vatBody">' + loadingBlock() + '</div>';
+  await loadVatReport();
+};
+V223_IMPL["loadVatReport__14112"] = async function() {
+  const host = $('#vatBody'); if (!host) return;
+  host.style.opacity = '.55';
+  const r = await gas('getVatReport', { from: VAT_REPORT.from, to: VAT_REPORT.to, kind: VAT_REPORT.kind });
+  host.style.opacity = '1';
+  if (!r || !r.success) { host.innerHTML = emptyState((r && r.message) || 'Không tải được báo cáo thuế'); return; }
+  VAT_REPORT.data = r.data;
+  host.innerHTML = vatReportHtml(r.data);
+};
+V223_IMPL["hrLoadBoot__14204"] = async function(force) {
+  if (HR.boot && !force) return HR.boot;
+  const r = await gas('getHrBootstrap');
+  HR.boot = (r && r.success) ? r.data : { employees: [], config: {} };
+  return HR.boot;
+};
+V223_IMPL["renderHrTab__14211"] = async function(tab) {
+  const body = $('#tabBody'); if (!body) return;
+  body.innerHTML = loadingBlock();
+  if (!HR.period) HR.period = hrThisPeriod();
+  await hrLoadBoot(true);
+  if (tab === 'employees') return hrRenderEmployees();
+  if (tab === 'attendance') return hrRenderAttendance();
+  if (tab === 'payroll') return hrRenderPayrolls();
+  return hrRenderDashboard();
+};
+V223_IMPL["hrRenderDashboard__14223"] = async function() {
+  const body = $('#tabBody'); if (!body) return;
+  const r = await gas('getHrDashboard', HR.period);
+  if (!r || !r.success) { body.innerHTML = emptyState((r && r.message) || 'Không tải được số liệu nhân sự'); return; }
+  HR.dash = r.data;
+  const d = r.data;
+  const p = d.payroll;
+  body.innerHTML = viewOnlyBanner('hr')
+    + '<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-4">'
+    + kpiCard('Đang làm việc', fmtNum(d.activeEmployees), 'groups', 'bg-brand-50 text-brand-600')
+    + kpiCard('Đã nghỉ việc', fmtNum(d.leftEmployees), 'person_off', 'bg-slate-100 text-slate-600')
+    + costOnly(kpiCard('Quỹ lương cơ bản / tháng', hrMoney(d.monthlyFund), 'payments', 'bg-emerald-50 text-emerald-600'))
+    + kpiCard('Giờ tăng ca ' + hrPeriodLabel(d.periodKey), fmtNum(d.overtimeHours), 'more_time', 'bg-amber-50 text-amber-600')
+    + '</div>'
+    + '<div class="grid grid-cols-1 xl:grid-cols-2 gap-4">'
+    + '<div class="bg-white rounded-2xl shadow-card border border-line p-5">'
+    + '<h3 class="font-semibold text-ink mb-3">Nhân sự theo phòng ban</h3>'
+    + ((d.departments || []).length
+      ? '<div class="space-y-2">' + d.departments.map(x => {
+        const pct = d.activeEmployees > 0 ? Math.round(x.count / d.activeEmployees * 100) : 0;
+        return '<div><div class="flex items-center justify-between text-[12.5px] mb-1"><span class="text-ink">' + esc(x.name) + '</span>'
+          + '<span class="text-muted">' + fmtNum(x.count) + ' người · ' + pct + '%</span></div>'
+          + '<div class="h-2 rounded-full bg-bg overflow-hidden"><div class="h-full grad" style="width:' + pct + '%"></div></div></div>';
+      }).join('') + '</div>'
+      : emptyState('Chưa khai phòng ban cho nhân viên nào'))
+    + '</div>'
+    + '<div class="bg-white rounded-2xl shadow-card border border-line p-5">'
+    + '<h3 class="font-semibold text-ink mb-3">Bảng lương ' + esc(hrPeriodLabel(d.periodKey)) + '</h3>'
+    + (p
+      ? '<div class="space-y-2.5">'
+      + '<div class="flex justify-between text-[13px]"><span class="text-muted">Trạng thái</span>' + badge(p.Status) + '</div>'
+      + '<div class="flex justify-between text-[13px]"><span class="text-muted">Số nhân viên</span><span class="font-semibold text-ink">' + fmtNum(p.EmployeeCount) + '</span></div>'
+      + costOnly('<div class="flex justify-between text-[13px]"><span class="text-muted">Tổng thu nhập</span><span class="font-semibold text-ink">' + hrMoney(p.TotalGross) + '</span></div>'
+        + '<div class="flex justify-between text-[13px]"><span class="text-muted">Tổng các khoản trừ</span><span class="font-semibold text-rose-600">' + hrMoney(p.TotalDeduction) + '</span></div>'
+        + '<div class="flex justify-between items-center pt-2 border-t border-line"><span class="text-[13px] font-semibold text-ink">Tổng thực lĩnh</span>'
+        + '<span class="text-[18px] font-bold text-brand-600">' + hrMoney(p.TotalNet) + '</span></div>')
+      + '<button type="button" onclick="hrOpenPayroll(' + esc(jsArg(p.PayrollID)) + ')" class="w-full mt-2 px-4 py-2.5 rounded-xl border border-stroke text-[13px] font-semibold hover:bg-bg">Mở bảng lương</button>'
+      + '</div>'
+      : '<div class="py-6 text-center"><div class="text-[13px] text-muted mb-4">Kỳ này chưa lập bảng lương.</div>'
+      + (canAdd('hr') ? btnPrimary('Lập bảng lương ' + hrPeriodLabel(d.periodKey), 'hrOpenPayrollForm()', 'request_quote') : '') + '</div>')
+    + '</div></div>';
+};
+V223_IMPL["hrSaveEmployee__14332"] = async function() {
+  const id = ($('#hrEmpId') || {}).value || '';
+  const data = {
+    FullName: ($('#hrName') || {}).value || '', EmployeeCode: ($('#hrCode') || {}).value || '',
+    Gender: ($('#hrGender') || {}).value || '', BirthDate: ($('#hrBirth') || {}).value || '',
+    IDNumber: ($('#hrIdNo') || {}).value || '', Phone: ($('#hrPhone') || {}).value || '',
+    Email: ($('#hrEmail') || {}).value || '', Address: ($('#hrAddress') || {}).value || '',
+    Department: ($('#hrDept') || {}).value || '', Position: ($('#hrPos') || {}).value || '',
+    StartDate: ($('#hrStart') || {}).value || '', ContractType: ($('#hrContract') || {}).value || '',
+    Status: ($('#hrStatus') || {}).value || 'Đang làm việc',
+    SalaryType: ($('#hrSalaryType') || {}).value || 'Tháng',
+    BaseSalary: moneyVal('hrBase'), AllowanceLunch: moneyVal('hrAlLunch'),
+    AllowanceTransport: moneyVal('hrAlTrans'), AllowancePhone: moneyVal('hrAlPhone'),
+    AllowanceOther: moneyVal('hrAlOther'), InsuranceBase: moneyVal('hrInsBase'),
+    Dependants: Number(($('#hrDeps') || {}).value) || 0,
+    BankAccount: ($('#hrBankAcc') || {}).value || '', BankName: ($('#hrBankName') || {}).value || '',
+    Notes: ($('#hrNotes') || {}).value || ''
+  };
+  if (!data.FullName.trim()) return toast('Vui lòng nhập họ tên', 'error');
+  if (SAVING) return; setSaving(true);
+  const r = id ? await gas('updateEmployee', id, data) : await gas('createEmployee', data);
+  setSaving(false);
+  if (!r || !r.success) return toast((r && r.message) || 'Không lưu được hồ sơ', 'error');
+  toast(r.message); closeModal();
+  await hrLoadBoot(true);
+  hrRenderEmployees();
+};
+V223_IMPL["hrRemoveEmployee__14395"] = async function(employeeId) {
+  if (SAVING) return; setSaving(true);
+  const r = await gas('deleteEmployee', employeeId);
+  setSaving(false);
+  if (!r || !r.success) return toast((r && r.message) || 'Không xóa được nhân viên', 'error');
+  toast(r.message); closeModal();
+  await hrLoadBoot(true);
+  hrRenderEmployees();
+};
+V223_IMPL["hrRenderAttendance__14406"] = async function() {
+  const body = $('#tabBody'); if (!body) return;
+  const r = await gas('getAttendance', HR.period);
+  if (!r || !r.success) { body.innerHTML = emptyState((r && r.message) || 'Không tải được chấm công'); return; }
+  HR.attendance = r.data;
+  body.innerHTML = viewOnlyBanner('hr') + hrAttendanceHtml();
+};
+V223_IMPL["hrAttSave__14547"] = async function() {
+  const keys = Object.keys(HR_ATT_DRAFT);
+  if (!keys.length) return toast('Chưa có thay đổi nào để lưu', 'info');
+  const y = HR.period.split('-')[0], m = HR.period.split('-')[1];
+  const rows = keys.filter(k => HR_ATT_DRAFT[k].LeaveType).map(k => {
+    const p = k.split('|');
+    return {
+      EmployeeID: p[0], WorkDate: y + '-' + m + '-' + ('0' + p[1]).slice(-2),
+      LeaveType: HR_ATT_DRAFT[k].LeaveType, OvertimeHours: HR_ATT_DRAFT[k].OvertimeHours || 0
+    };
+  });
+  if (!rows.length) return toast('Chưa chọn loại công cho ngày nào', 'error');
+  if (SAVING) return; setSaving(true);
+  const r = await gas('saveAttendance', HR.period, rows);
+  setSaving(false);
+  if (!r || !r.success) return toast((r && r.message) || 'Không lưu được chấm công', 'error');
+  toast(r.message);
+  HR_ATT_DRAFT = {};
+  await hrRenderAttendance();
+};
+V223_IMPL["hrRenderPayrolls__14569"] = async function() {
+  const body = $('#tabBody'); if (!body) return;
+  const r = await gas('getPayrolls');
+  HR.payrolls = (r && r.success) ? (r.data || []) : [];
+  body.innerHTML = viewOnlyBanner('hr') + filterableTable('hrPay', HR.payrolls, costCols([
+    { label: 'Mã bảng lương', key: 'PayrollID' },
+    { label: 'Kỳ lương', key: 'PeriodName', render: p => esc(p.PeriodName || hrPeriodLabel(p.PeriodKey)) },
+    { label: 'Số NV', key: 'EmployeeCount', right: true, render: p => fmtNum(p.EmployeeCount) },
+    { label: 'Công chuẩn', key: 'StandardDays', right: true, render: p => fmtNum(p.StandardDays) },
+    { label: 'Tổng thu nhập', key: 'TotalGross', right: true, cost: true, render: p => hrMoney(p.TotalGross) },
+    { label: 'Tổng trừ', key: 'TotalDeduction', right: true, cost: true, render: p => hrMoney(p.TotalDeduction) },
+    { label: 'Thực lĩnh', key: 'TotalNet', right: true, cost: true, render: p => '<b>' + hrMoney(p.TotalNet) + '</b>' },
+    COL_NGUOI_LAP,
+    { label: 'Trạng thái', key: 'Status', render: p => badge(p.Status) }
+  ]), {
+    search: ['PayrollID', 'PeriodName', 'PeriodKey', 'Notes'], searchPlaceholder: 'Tìm kỳ lương...',
+    selects: [{ field: 'Status', label: 'Trạng thái' }],
+    idKey: 'PayrollID', onRowClick: 'hrOpenPayroll',
+    action: (canAdd('hr') ? btnPrimary('Lập bảng lương', 'hrOpenPayrollForm()', 'request_quote') : ''),
+    sorts: [{ value: 'field:PeriodKey', label: 'Kỳ lương' }, { value: 'field:TotalNet', label: 'Tổng thực lĩnh' }]
+  });
+};
+V223_IMPL["hrSavePayroll__14610"] = async function() {
+  if (SAVING) return; setSaving(true);
+  const r = await gas('createPayroll', {
+    PeriodKey: ($('#hrPeriodKey') || {}).value || hrThisPeriod(),
+    PeriodName: ($('#hrPeriodName') || {}).value || '',
+    StandardDays: Number(($('#hrStdDays') || {}).value) || 0,
+    FromDate: ($('#hrFrom') || {}).value || '', ToDate: ($('#hrTo') || {}).value || '',
+    Notes: ($('#hrPayNotes') || {}).value || ''
+  });
+  setSaving(false);
+  if (!r || !r.success) return toast((r && r.message) || 'Không lập được bảng lương', 'error');
+  toast(r.message); closeModal();
+  await hrRenderPayrolls();
+  hrOpenPayroll(r.data.PayrollID);
+};
+V223_IMPL["hrOpenPayroll__14626"] = async function(payrollId) {
+  openModalLoading('Bảng lương', 'request_quote', 1000);
+  const r = await gas('getPayrollDetail', payrollId);
+  if (!r || !r.success) { closeModal(); return toast((r && r.message) || 'Không tải được bảng lương', 'error'); }
+  HR.detail = r.data;
+  hrPayrollModal();
+};
+V223_IMPL["hrSaveLine__14705"] = async function() {
+  const id = ($('#hrLineId') || {}).value || '';
+  if (SAVING) return; setSaving(true);
+  const r = await gas('updatePayrollLine', id, {
+    WorkDays: Number(($('#hrLnWork') || {}).value) || 0,
+    OvertimeHours: Number(($('#hrLnOt') || {}).value) || 0,
+    BaseSalary: moneyVal('hrLnBase'), Allowance: moneyVal('hrLnAllow'),
+    Bonus: moneyVal('hrLnBonus'), Advance: moneyVal('hrLnAdv'),
+    OtherDeduction: moneyVal('hrLnOther'), InsuranceBase: moneyVal('hrLnIns'),
+    Note: ($('#hrLnNote') || {}).value || ''
+  });
+  setSaving(false);
+  if (!r || !r.success) return toast((r && r.message) || 'Không lưu được', 'error');
+  toast(r.message);
+  await hrOpenPayroll(HR.detail.payroll.PayrollID);
+};
+V223_IMPL["hrApprovePayroll__14721"] = async function(payrollId) {
+  if (SAVING) return; setSaving(true);
+  const r = await gas('approvePayroll', payrollId);
+  setSaving(false);
+  if (!r || !r.success) return toast((r && r.message) || 'Không duyệt được', 'error');
+  toast(r.message);
+  await hrOpenPayroll(payrollId);
+};
+V223_IMPL["hrDoPay__14748"] = async function() {
+  const id = ($('#hrPayId') || {}).value || '';
+  if (SAVING) return; setSaving(true);
+  const r = await gas('payPayroll', id, {
+    AccountID: ($('#hrPayAcc') || {}).value || '', CategoryID: ($('#hrPayCat') || {}).value || '',
+    PayDate: ($('#hrPayDate') || {}).value || '', Method: ($('#hrPayMethod') || {}).value || 'Chuyển khoản'
+  });
+  setSaving(false);
+  if (!r || !r.success) return toast((r && r.message) || 'Không chi lương được', 'error');
+  toast(r.message);
+  delete STATE.cache.finance;
+  await hrRenderPayrolls();
+  hrOpenPayroll(id);
+};
+V223_IMPL["hrRemovePayroll__14762"] = async function(payrollId) {
+  if (SAVING) return; setSaving(true);
+  const r = await gas('deletePayroll', payrollId);
+  setSaving(false);
+  if (!r || !r.success) return toast((r && r.message) || 'Không xóa được bảng lương', 'error');
+  toast(r.message); closeModal();
+  await hrRenderPayrolls();
+};
+V223_IMPL["hrPayslip__14771"] = async function(lineId) {
+  openModalLoading('Phiếu lương', 'receipt_long', 520);
+  const r = await gas('getPayslip', lineId);
+  if (!r || !r.success) { closeModal(); return toast((r && r.message) || 'Không xem được phiếu lương', 'error'); }
+  const l = r.data.line, p = r.data.payroll, e = r.data.employee;
+  const s = (STATE.init && STATE.init.settings) || {};
+  const row = (k, v, cls) => '<div class="flex justify-between gap-3 py-1.5"><span class="text-[12.5px] text-muted">' + esc(k) + '</span>'
+    + '<span class="text-[12.5px] font-medium ' + (cls || 'text-ink') + '">' + v + '</span></div>';
+  openModal(modalShell({
+    title: 'Phiếu lương', subtitle: esc(l.EmployeeName + ' · ' + (p.PeriodName || hrPeriodLabel(p.PeriodKey))), icon: 'receipt_long',
+    body: '<div id="payslipBox" class="rounded-xl border border-line p-5">'
+      + '<div class="text-center mb-4"><div class="text-[15px] font-bold text-ink">' + esc(s.BusinessName || 'PHIẾU LƯƠNG') + '</div>'
+      + '<div class="text-[12px] text-muted">Phiếu lương ' + esc(p.PeriodName || hrPeriodLabel(p.PeriodKey)) + '</div></div>'
+      + '<div class="mb-3">' + row('Họ tên', '<b>' + esc(l.EmployeeName) + '</b>') + row('Mã nhân viên', esc(l.EmployeeCode || ''))
+      + row('Phòng ban', esc(l.Department || '-')) + row('Chức vụ', esc(l.Position || '-'))
+      + row('Số tài khoản', esc((e.BankAccount || '-') + (e.BankName ? ' · ' + e.BankName : ''))) + '</div>'
+      + '<div class="border-t border-line pt-2 mb-2"><div class="text-[12.5px] font-semibold text-ink mb-1">Thu nhập</div>'
+      + row('Lương theo công (' + fmtNum(l.WorkDays) + '/' + fmtNum(l.StandardDays) + ' công)', hrMoney(l.SalaryByWork))
+      + row('Phụ cấp', hrMoney(l.Allowance))
+      + row('Thưởng', hrMoney(l.Bonus))
+      + row('Tăng ca (' + fmtNum(l.OvertimeHours) + ' giờ x ' + fmtNum(l.OvertimeRate) + ')', hrMoney(l.OvertimePay))
+      + row('Tổng thu nhập', '<b>' + hrMoney(l.GrossPay) + '</b>') + '</div>'
+      + '<div class="border-t border-line pt-2 mb-2"><div class="text-[12.5px] font-semibold text-ink mb-1">Các khoản trừ</div>'
+      + row('BHXH, BHYT, BHTN', hrMoney(l.InsuranceEmployee), 'text-rose-600')
+      + row('Thuế TNCN', hrMoney(l.PersonalTax), 'text-rose-600')
+      + row('Tạm ứng', hrMoney(l.Advance), 'text-rose-600')
+      + row('Trừ khác', hrMoney(l.OtherDeduction), 'text-rose-600')
+      + row('Tổng trừ', '<b>' + hrMoney(l.TotalDeduction) + '</b>', 'text-rose-600') + '</div>'
+      + '<div class="border-t-2 border-line pt-3 flex justify-between items-center">'
+      + '<span class="text-[13.5px] font-bold text-ink">THỰC LĨNH</span>'
+      + '<span class="text-[22px] font-bold text-brand-600">' + hrMoney(l.NetPay) + '</span></div>'
+      + (l.Note ? '<div class="text-[11.5px] text-muted mt-3">Ghi chú: ' + esc(l.Note) + '</div>' : '')
+      + '<div class="text-[11px] text-muted mt-4 text-center">Doanh nghiệp đóng thêm bảo hiểm cho người lao động: ' + hrMoney(l.InsuranceCompany) + '</div>'
+      + '</div>',
+    footer: btnSecondary('Đóng', 'closeModal()', 'close')
+      + '<button onclick="hrPrintPayslip()" class="grad text-white px-4 py-2.5 rounded-xl text-[13px] font-semibold flex items-center gap-1.5"><span class="ms text-[18px]">print</span>In phiếu lương</button>'
+  }), 520);
+};
+V223_IMPL["nxtOpenCard__15064"] = async function(productId) {
+  openModalLoading('Thẻ kho', 'receipt_long', 900);
+  const r = await gas('getStockCardReport', productId, {
+    from: NXT.from, to: NXT.to, warehouseId: NXT.warehouseId
+  });
+  if (!r || !r.success) { closeModal(); return toast((r && r.message) || 'Không xem được thẻ kho', 'error'); }
+  const d = r.data, p = d.product || {};
+  const rows = (d.lines || []).map(l => '<tr class="border-t border-line">'
+    + '<td class="px-3 py-2 whitespace-nowrap">' + esc(fmtDate(l.Date)) + '</td>'
+    + '<td class="px-3 py-2">' + esc(l.Type || '') + '</td>'
+    + '<td class="px-3 py-2">' + (l.SourceID ? '<span class="text-brand-600 font-semibold">' + esc(l.SourceID) + '</span>' : '<span class="text-stroke">-</span>') + '</td>'
+    + '<td class="px-3 py-2">' + esc(l.WarehouseName || '') + '</td>'
+    + '<td class="px-3 py-2 text-right text-emerald-600">' + (l.InQty ? fmtNum(l.InQty) : '') + '</td>'
+    + '<td class="px-3 py-2 text-right text-rose-600">' + (l.OutQty ? fmtNum(l.OutQty) : '') + '</td>'
+    + '<td class="px-3 py-2 text-right font-semibold">' + fmtNum(l.Balance) + '</td>'
+    + '<td class="px-3 py-2 text-muted">' + esc(l.Notes || '') + '</td></tr>').join('');
+  openModal(modalShell({
+    title: 'Thẻ kho — ' + esc(p.ProductName || ''), icon: 'receipt_long',
+    subtitle: esc((p.SKU || '') + ' · ' + ((NXT.data && NXT.data.warehouseName) || 'Tất cả kho')),
+    body: '<div class="grid grid-cols-3 gap-2.5 mb-4">'
+      + '<div class="rounded-xl bg-bg px-3 py-2.5"><div class="text-[10.5px] text-muted">Tồn đầu kỳ</div><div class="text-[15px] font-bold text-ink">' + fmtNum(d.openQty) + '</div></div>'
+      + '<div class="rounded-xl bg-bg px-3 py-2.5"><div class="text-[10.5px] text-muted">Số lượt phát sinh</div><div class="text-[15px] font-bold text-ink">' + fmtNum(d.count) + '</div></div>'
+      + '<div class="rounded-xl bg-emerald-50 px-3 py-2.5"><div class="text-[10.5px] text-emerald-700">Tồn cuối kỳ</div><div class="text-[15px] font-bold text-emerald-800">' + fmtNum(d.closeQty) + '</div></div>'
+      + '</div>'
+      + (rows
+        ? '<div class="rtable-wrap overflow-x-auto max-h-[420px] overflow-y-auto border border-line rounded-xl"><table class="w-full text-[12.5px]">'
+        + '<thead class="sticky top-0"><tr class="bg-bg">'
+        + ['Ngày', 'Loại', 'Chứng từ', 'Kho', 'Nhập', 'Xuất', 'Tồn sau', 'Ghi chú']
+          .map((h, i) => '<th class="px-3 py-2 text-muted font-semibold ' + (i >= 4 && i <= 6 ? 'text-right' : 'text-left') + ' whitespace-nowrap">' + h + '</th>').join('')
+        + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+        : emptyState('Kỳ này mặt hàng chưa phát sinh nhập xuất')),
+    footer: btnSecondary('Đóng', 'closeModal()', 'close')
+  }), 900);
+};
+V223_INSTALLED["extended"] = "v20.24-969a11832328";

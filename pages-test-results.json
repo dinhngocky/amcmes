@@ -1,0 +1,12 @@
+{
+  "build": "v20.24-969a11832328",
+  "passed": 5,
+  "environment": "VM with DOM stubs; no browser layout or live Google service verification",
+  "tests": [
+    "shared tables render at most 20 rows and next/previous replace rather than append",
+    "local filter searches all 101 rows, resets page and keeps the late result",
+    "remote filter sends complete scope, query/date/selection before requesting page",
+    "out-of-order RPC response cannot overwrite a newer page",
+    "response after navigation cannot paint the new screen"
+  ]
+}

@@ -1,0 +1,1489 @@
+/* AMCVN v20.24-969a11832328 / production */
+V223_IMPL["renderProductionTab__2769"] = async function(tab){
+  // Module "Công thức giá bán / giá vốn" ĐÃ MỞ cho bản này -> vào thẳng màn hình công thức.
+  if(tab==='formulas') return renderFormulasTab();
+  if(tab==='assembly') return renderAssemblyDashboardTab();
+  const body=$('#tabBody');
+  if(body) body.innerHTML=loadingBlock();
+  
+  if(tab==='overview'){
+    const r=await gas('getProductionSummary'); const d=(r&&r.data)||{};
+    STATE.cache.production=d.orders||[]; STATE.cacheAt=STATE.cacheAt||{}; STATE.cacheAt.production=Date.now();
+    const orders=(d.orders||[]).slice().reverse();
+    
+    const kCols = [{id:'Đã lên lệnh',name:'Đã lên lệnh',color:'bg-slate-100',dot:'bg-slate-400'}, {id:'Đang sản xuất',name:'Đang sản xuất',color:'bg-amber-50',dot:'bg-amber-500'}, {id:'Hoàn thành',name:'Hoàn thành',color:'bg-emerald-50',dot:'bg-emerald-500'}];
+    const kanbanHtml = '<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">'+kCols.map(c=>{
+      const items = orders.filter(o=>o.Status===c.id);
+      return '<div class="rounded-2xl bg-bg border border-line p-3 flex flex-col h-[500px]" ondragover="allowDropKanban(event)" ondrop="dropKanban(event,\''+c.id+'\')">'
+        +'<div class="flex items-center justify-between mb-3 px-1"><div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full '+c.dot+'"></span><h4 class="font-semibold text-ink text-[13px]">'+c.name+'</h4></div><span class="text-[11px] font-bold text-muted bg-stroke px-2 py-0.5 rounded-full">'+items.length+'</span></div>'
+        +'<div class="flex-1 overflow-y-auto space-y-2 pr-1">'
+        +items.map(o=>{ const progress=productionProgressValue(o); return '<div draggable="true" ondragstart="dragKanban(event,\''+o.ProductionID+'\')" onclick="viewProduction(\''+o.ProductionID+'\')" class="bg-white p-3 rounded-xl border border-line shadow-sm cursor-pointer hover:border-brand-400 hover:shadow-md transition">'
+          +'<div class="flex justify-between items-start mb-1.5"><span class="text-[11px] font-bold text-brand-600">'+o.ProductionID+'</span><span class="text-[10px] text-muted">'+fmtDate(o.ProductionDate)+'</span></div>'
+          +'<div class="font-semibold text-[13px] text-ink mb-1">'+esc(o.ProductName)+'</div>'
+          +'<div class="text-[10.5px] text-muted truncate">'+esc((o.MachineCode||o.MachineID||'Chưa gắn máy')+(o.KitID?' · Kit '+o.KitID:'')+(o.LeaderName?' · '+o.LeaderName:''))+'</div>'
+          +'<div class="text-[10.5px] text-muted truncate mb-1.5">'+esc(o.CurrentStage||(o.Status==='Hoàn thành'?'Hoàn thành':'Chưa cập nhật công đoạn'))+'</div>'
+          +'<div class="flex items-center gap-2"><div class="h-1.5 flex-1 rounded-full bg-slate-100 overflow-hidden"><div class="h-full rounded-full bg-brand-500 transition-all" style="width:'+progress+'%"></div></div><b class="text-[10px] text-brand-600">'+progress+'%</b></div>'
+          +'<div class="flex justify-between items-center mt-2 pt-2 border-t border-line text-[11px]"><span class="text-muted">SL: <b class="text-ink">'+fmtNum(o.Quantity)+'</b></span><span class="text-muted">Chi phí: <b class="text-ink">'+fmtVND(o.ActualMaterialCost||o.MaterialCost)+'</b></span></div>'
+          +'</div>'; }).join('')
+        +'</div></div>';
+    }).join('')+'</div>';
+
+    if(!body) return;
+    body.innerHTML='<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-5">'
+      +kpiCard('Số lệnh sản xuất', fmtNum(d.total),'precision_manufacturing','bg-brand-50 text-brand-600')
+      +kpiCard('Đang sản xuất', fmtNum(d.running),'pending_actions','bg-amber-50 text-amber-600')
+      +kpiCard('Thành phẩm đã nhập', fmtNum(d.producedQty),'inventory','bg-emerald-50 text-emerald-600')
+      +kpiCard('Tổng chi phí NVL', fmtVND(d.materialCost),'payments','bg-indigo-50 text-indigo-600')
+      +'</div>'
+      +'<div class="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-5">'
+        +'<div class="xl:col-span-2 bg-white rounded-2xl p-5 shadow-card border border-line"><div class="flex justify-between items-center mb-4"><h3 class="font-semibold text-ink">Bảng Kanban Lệnh Sản Xuất</h3>'+btnPrimary('Tạo lệnh','openProductionModal()','add')+'</div>'+kanbanHtml+'</div>'
+        +'<div class="bg-white rounded-2xl p-5 shadow-card border border-line"><h3 class="font-semibold text-ink mb-1">Phân tích Hao hụt (Chi phí)</h3><div class="text-[11px] text-muted mb-4">So sánh Chi phí định mức (Lý thuyết) vs Thực tế</div><div class="h-[430px]"><canvas id="prodChart"></canvas></div></div>'
+      +'</div>'
+      +'<div class="flex items-center justify-between mb-3"><h3 class="font-semibold text-ink">Danh sách tổng hợp</h3></div>'
+      +filterableTable('prodOrders', orders, [
+        {label:'Mã lệnh',key:'ProductionID'},{label:'Ngày',render:r=>fmtDate(r.ProductionDate)},{label:'Máy / Kit',render:r=>esc((r.MachineCode||r.MachineID||'-')+(r.KitID?' / '+r.KitID:''))},{label:'Leader',key:'LeaderName'},{label:'Thành phẩm',key:'ProductName'},
+        {label:'SL Kế hoạch',right:true,render:r=>fmtNum(r.Quantity)},{label:'SL Thực tế',right:true,render:r=>r.ActualQuantity===''||r.ActualQuantity==null?'-':fmtNum(r.ActualQuantity)},
+        {label:'Tiến độ',render:r=>{const p=productionProgressValue(r);return '<div class="min-w-[105px]"><div class="flex justify-between text-[10px] mb-1"><span class="text-muted truncate max-w-[72px]">'+esc(r.CurrentStage||(r.Status==='Hoàn thành'?'Hoàn thành':'-'))+'</span><b class="text-brand-600">'+p+'%</b></div><div class="h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="h-full bg-brand-500 rounded-full" style="width:'+p+'%"></div></div></div>'; }},
+        {label:'Giá thành/SP',right:true,render:r=>fmtVND(r.UnitCost)},{label:'Tổng chi phí',right:true,render:r=>fmtVND(Number(r.ActualMaterialCost||r.MaterialCost||0)+Number(r.MoneyCostTotal||0)+Number(r.LaborCost||0)+Number(r.OverheadCost||0))},
+        {label:'Trạng thái',render:r=>badge(r.Status)}
+      ], {search:['ProductionID','ProductName'], searchPlaceholder:'Tìm lệnh SX...', selects:[{field:'Status',label:'Trạng thái'}], onRowClick:'viewProduction', idKey:'ProductionID'});
+
+    /* FIX: trước đây dùng setTimeout(...,100) + new Chart(getElementById(...)) không kiểm tra null.
+       Đổi tab trong vòng 100ms -> canvas biến mất -> new Chart(null) -> Chart.js sinh instance hỏng
+       -> lần sau ném TypeError từ CDN -> banner "Lỗi giao diện: Script error." Nay vẽ ngay + mkChart guard. */
+    if(d.chart && d.chart.labels && d.chart.labels.length){
+      mkChart('prodChart',{type:'line',data:{labels:d.chart.labels,datasets:[
+        {label:'Lý thuyết',data:d.chart.expected,borderColor:'#9ca3af',borderDash:[5,5],tension:0.3},
+        {label:'Thực tế',data:d.chart.actual,borderColor:'#ef4444',backgroundColor:'rgba(239,68,68,0.1)',fill:true,tension:0.3}
+      ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+    }
+    return;
+  }
+  
+  if(tab==='bom'){
+    const r=await gas('getBOMSummary'); const list=(r&&r.data)||[]; STATE.cache.bomSummary=list;
+    const prods = await load('products','getProducts');
+    
+    // Ghép dữ liệu để hiển thị giao diện BOM đỉnh cao
+    const enrichedList = list.map(b => {
+       const p = prods.find(x => x.ProductID === b.ProductID) || {};
+       return {...b, ImageUrl: p.ImageUrl, CurrentStock: p.CurrentStock, SalePrice: p.SalePrice, Unit: p.Unit};
+    });
+
+    body.innerHTML='<div class="flex items-center justify-between mb-4"><h3 class="font-semibold text-ink text-[16px]">Định mức nguyên vật liệu (BOM)</h3>'+btnPrimary('Thiết lập định mức','openBOMModal()','tune')+'</div>'
+      +(enrichedList.length?filterableTable('bomList', enrichedList, [
+          {label:'Ảnh', render:r=>r.ImageUrl?'<img src="'+esc(r.ImageUrl)+'" class="w-11 h-11 rounded-xl object-cover border border-line shadow-sm">':'<div class="w-11 h-11 rounded-xl bg-brand-50 flex items-center justify-center border border-brand-100 shadow-sm"><span class="ms text-brand-500 text-[20px]">inventory_2</span></div>'},
+          {label:'Thành phẩm', render:r=>'<div class="font-bold text-ink text-[14px] mb-0.5">'+esc(r.ProductName)+'</div><div class="text-[11px] text-muted font-medium">Mã: '+esc(r.SKU||'')+' &nbsp;|&nbsp; ĐVT: '+esc(r.Unit||'-')+'</div>'},
+          {label:'Tồn kho', right:true, render:r=>'<div class="font-bold text-ink">'+fmtNum(r.CurrentStock)+'</div>'},
+          {label:'Giá bán', right:true, render:r=>'<div class="font-semibold text-emerald-600">'+fmtVND(r.SalePrice)+'</div>'},
+          {label:'Số loại NVL', right:true, render:r=>'<span class="inline-flex items-center gap-1 bg-slate-100 border border-line text-slate-700 px-2.5 py-1 rounded-lg text-[12px] font-bold shadow-sm"><span class="ms text-[15px]">science</span>'+fmtNum(r.components)+'</span>'},
+          {label:'Giá thành NVL', right:true, render:r=>'<div class="text-[11px] text-muted mb-0.5">/ 1 sản phẩm</div><b class="text-[15px] text-brand-600">'+fmtVND(r.unitCost)+'</b>'},
+          {label:'',right:true,render:r=>actCell([
+            {icon:'edit',onclick:"openBOMModal('"+r.ProductID+"')",color:'text-brand-600 text-[20px] bg-brand-50',title:'Sửa định mức'},
+            {icon:'delete',onclick:"event.stopPropagation();confirmDeleteBOM('"+r.ProductID+"')",color:'text-rose-600 text-[20px] bg-rose-50',title:'Xóa định mức'}
+          ])}
+        ], {search:['ProductName','SKU'], searchPlaceholder:'Tìm tên thành phẩm, mã SKU...', onRowClick:'openBOMModal', idKey:'ProductID'}) : emptyState('Chưa có định mức nào.'));
+    return;
+  }
+  
+  if(tab==='materials'){
+    const bomR=await gas('getBOMItems'); 
+    window._BOM_ITEMS = bomR.data || [];
+    const usage={}; 
+    window._BOM_ITEMS.forEach(b=>{ usage[b.ComponentID]=(usage[b.ComponentID]||0)+1; });
+    
+    const prods=await load('products','getProducts');
+    
+    // ÁP DỤNG HÀM THÔNG MINH TẠI ĐÂY
+    // Ưu tiên 1: SP đã từng được dùng làm NVL (usage có data)
+    // Ưu tiên 2: Tên nhóm hàng thuộc nhóm nhận diện là NVL
+    const mats=prods.filter(p => usage[p.ProductID] || (typeof isMaterialCategory === 'function' ? isMaterialCategory(p.Category) : false))
+                    .map(p => Object.assign({}, p, {usedIn:usage[p.ProductID]||0}));
+    
+    // Sắp xếp: Ưu tiên cảnh báo tồn thấp lên đầu, sau đó đến số lượng BOM tham gia
+    mats.sort((a,b) => {
+       const sA = rankStock(a.Status), sB = rankStock(b.Status);
+       if(sA !== sB) return sA - sB;
+       return b.usedIn - a.usedIn;
+    });
+
+    body.innerHTML='<div class="flex items-center justify-between mb-4"><h3 class="font-semibold text-ink text-[16px]">Danh mục Nguyên Vật Liệu</h3><button onclick="openProductModal()" class="grad text-white px-4 py-2.5 rounded-xl text-[13px] font-semibold flex items-center gap-1.5 shadow-card hover:opacity-95"><span class="ms text-[18px]">add</span>Thêm NVL</button></div>'
+      +(mats.length?filterableTable('matList', mats, [
+         {label:'Ảnh', render:r=>r.ImageUrl?'<img src="'+esc(r.ImageUrl)+'" class="w-10 h-10 rounded-xl object-cover border border-line">':'<div class="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center border border-brand-100"><span class="ms text-brand-500 text-[20px]">science</span></div>'},
+         {label:'Nguyên vật liệu', render:r=>'<div class="font-semibold text-ink text-[14px]">'+esc(r.ProductName)+'</div><div class="text-[11px] text-muted mt-0.5">'+esc(r.SKU||'')+'</div>'},
+         {label:'ĐVT', render:r=>esc(r.Unit||'-')},
+         {label:'Giá vốn', right:true, render:r=>'<span class="font-medium text-amber-700">'+fmtVND(r.CostPrice)+'</span>'},
+         {label:'Tồn kho', right:true, render:r=>{
+            const cur = Number(r.CurrentStock)||0;
+            const min = Number(r.MinStock)||0;
+            const isLow = cur <= min;
+            return '<div class="font-bold text-[14px] '+(isLow?'text-rose-600':'text-ink')+'">'+fmtNum(cur)+'</div><div class="text-[11px] text-muted mt-0.5">Min: '+fmtNum(min)+'</div>';
+         }},
+         {label:'Trạng thái', render:r=>badge(r.Status)},
+         {label:'Dùng trong', right:true, render:r=>{
+            if(!r.usedIn) return '<span class="text-muted text-[12px] bg-bg border border-line px-2.5 py-1.5 rounded-lg shadow-sm">0 BOM</span>';
+            return '<button onclick="event.stopPropagation(); viewMaterialBOMs(\''+r.ProductID+'\')" class="inline-flex items-center gap-1 text-[12px] font-bold text-brand-700 bg-brand-50 px-3 py-1.5 rounded-lg hover:bg-brand-100 hover:shadow-md transition ring-1 ring-brand-200 shadow-sm"><span class="ms text-[16px]">account_tree</span>'+fmtNum(r.usedIn)+' BOM</button>';
+         }},
+         {label:'', right:true, render:r=>actCell([
+            {icon:'history',onclick:"viewProduct('"+r.ProductID+"', 'history')",title:'Lịch sử biến động'},
+            {icon:'add_shopping_cart',onclick:"openPurchaseModal(null, '"+r.ProductID+"')",color:'text-brand-600 text-[20px] bg-brand-50',title:'Tạo phiếu mua hàng (Auto-fill)'}
+         ])}
+      ], {
+         search:['SKU','ProductName'], searchPlaceholder:'Tìm tên NVL, mã SKU...',
+         selects:[{field:'Status',label:'Trạng thái'}],
+         onRowClick:'viewProduct', idKey:'ProductID'
+      }) : emptyState('Chưa có nguyên vật liệu.'));
+    return;
+  }
+};
+V223_IMPL["openProductionModal__3609"] = async function(productId){
+  // BẬT POPUP NGAY LẬP TỨC VỚI SKELETON
+  openModal(modalShell({title:'Tạo lệnh sản xuất', subtitle:'Kế hoạch sản xuất & Dự tính chi phí', icon:'precision_manufacturing',
+    body: '<div id="poModalContent">' + loadingBlock() + '</div>',
+    footer: '<div id="poModalFooter"></div>'
+  }), 720);
+
+  // Load ngầm dữ liệu
+  await load('products','getProducts');
+  await whLoad().catch(function(){ return []; });
+  const ctx=await phase1Options().catch(function(){return {projects:[],machines:[],kits:[],employees:[]};});
+  const bomR = await gas('getBOMSummary');
+  const withBom = (bomR && bomR.data) || [];
+  
+  if(!withBom.length){ 
+    $('#poModalContent').innerHTML = emptyState('Chưa có thành phẩm nào có định mức. Hãy thiết lập (BOM) trước.');
+    return; 
+  }
+  
+  window.BOM_PRODUCT_SET={}; withBom.forEach(p=>{ window.BOM_PRODUCT_SET[p.ProductID]=1; });
+  PROD_ORDER={productId:productId||'', qty:1, bom:null};
+  
+  // Ráp HTML khi có dữ liệu
+  const bodyHtml = row2(field('Dự án',sel('prodProject',p1ProjectOptions(ctx,true),APP_CONTEXT.projectId||'').replace('class=\"fld\"','class=\"fld\" onchange=\"prodContextChanged(\'project\')\"')),field('Máy','<div id=\"prodMachineHost\">'+sel('prodMachine',p1MachineOptions(ctx,APP_CONTEXT.projectId,true),APP_CONTEXT.machineId||'').replace('class=\"fld\"','class=\"fld\" onchange=\"prodContextChanged(\'machine\')\"')+'</div>'))
+    +row2(field('Bộ kit','<div id=\"prodKitHost\">'+sel('prodKit',[{v:'',t:'-- Chưa gắn kit --'}].concat((ctx.kits||[]).filter(x=>!APP_CONTEXT.machineId||x.MachineID===APP_CONTEXT.machineId).map(x=>({v:x.KitID,t:x.KitID+' — '+x.KitName}))),'' )+'</div>'),field('Leader',sel('prodLeader',p1EmployeeOptions(ctx,true),'')))
+    +field('Thành phẩm sản xuất *', productPicker({id:'poProduct', value:productId||'', onlyBom:true, onpick:'prodProductChanged', placeholder:'Tìm thành phẩm có định mức…'}))
+    +row2(field('Số lượng SX *', '<input id="poQty" type="number" min="1" value="1" oninput="prodQtyChanged()" class="fld"/>'), field('Ngày', inp('poDate','','date',todayInput())))
+    +row2(field('Phí nhân công dự tính', moneyInp('poLabor', 0)), field('Khấu hao/Điện nước', moneyInp('poOverhead', 0)))
+    +whField('prodWarehouse','','Kho sản xuất','Xuất nguyên vật liệu và nhập thành phẩm đều tại kho này')
+    +field('Trạng thái', sel('poStatus',[{v:'Đã lên lệnh',t:'Đã lên lệnh (Chưa xuất kho)'},{v:'Đang sản xuất',t:'Đang sản xuất (Xuất kho NVL)'}],'Đã lên lệnh'))
+    +'<div id="poMaterials" class="mt-1 mb-2"></div>'
+    +field('Ghi chú', inp('poNotes'));
+
+  // Đổ nội dung thật vào Modal
+  if($('#poModalContent')) {
+     $('#poModalContent').innerHTML = bodyHtml;
+     $('#poModalFooter').outerHTML = btnSecondary('Huỷ','closeModal()','close')+btnPrimary('Tạo lệnh sản xuất','saveProduction()','precision_manufacturing');
+     ['poLabor','poOverhead'].forEach(id=>{const el=$('#'+id);if(el)el.addEventListener('input',renderProdMaterials)});
+     if(productId) prodProductChanged();
+  }
+};
+V223_IMPL["saveProduction__3650"] = async function(){
+  const pid=($('#poProduct')||{}).value||''; if(!pid) return toast('Chọn thành phẩm','error');
+  const qty=Number(($('#poQty')||{}).value)||0; if(qty<=0) return toast('Nhập số lượng hợp lệ','error');
+  const ctx=PHASE1_OPTIONS||{},lead=(ctx.employees||[]).find(x=>x.EmployeeID===amcvnVal('prodLeader'))||{};const machine=(ctx.machines||[]).find(x=>x.MachineID===amcvnVal('prodMachine'))||{};
+  const data={ProjectID:machine.ProjectID||amcvnVal('prodProject'),MachineID:machine.MachineID||'',KitID:amcvnVal('prodKit'),LeaderEmployeeID:lead.EmployeeID||'',LeaderName:lead.FullName||'',ProductID:pid, Quantity:qty, WarehouseID:whVal('prodWarehouse'), ProductionDate:($('#poDate')||{}).value, Status:($('#poStatus')||{}).value, Notes:($('#poNotes')||{}).value, LaborCost:moneyVal('poLabor'), OverheadCost:moneyVal('poOverhead')};
+  if(SAVING)return; setSaving(true); toast('Đang tạo lệnh...','info');
+  const r=await gas('createProductionOrder',data); setSaving(false);
+  if(r&&r.success){ toast(r.message); closeModal(); await reprime('production','products','movements'); render(); } else toast((r&&r.message)||'Tạo thất bại','error');
+};
+V223_IMPL["openCompleteProductionModal__3660"] = async function(id) {
+  openModalLoading('Chốt lệnh sản xuất '+id,'fact_check',860);
+  const r=await detailGet('getProductionDetail',id);
+  await load('products','getProducts'); // Tải danh mục SP để lấy ảnh & đơn vị tính
+  if(!r.success){ closeModal(); return toast(r.message,'error'); }
+  
+  const d=r.data; const o=d.order||{};
+  if(o.Status==='Hoàn thành'){ closeModal(); return toast('Lệnh đã hoàn thành, không thể ghi kho lần hai.','error'); }
+  if(o.Status!=='Đang sản xuất'){ closeModal(); return toast('Chỉ lệnh Đang sản xuất mới được hoàn thành.','error'); }
+  const mats=(d.materials||[]).filter(m=>String(m.LineType||'Material')!=='MoneyCost');
+  const prods=STATE.cache.products||[];
+  
+  // Lấy đơn vị tính của thành phẩm
+  const tp = prods.find(p => p.ProductID === o.ProductID) || {};
+  const tpUnit = tp.Unit || 'SP';
+
+  // Render danh sách NVL kèm hình ảnh và đơn vị
+  const matHtml = mats.map(m => {
+    const p = prods.find(x => x.ProductID === m.ComponentID) || {};
+    const unit = p.Unit || '';
+    const img = p.ImageUrl ? `<img src="${esc(p.ImageUrl)}" class="w-9 h-9 rounded-lg object-cover border border-line shrink-0 shadow-sm">` : `<div class="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 border border-line"><span class="ms text-slate-400 text-[18px]">science</span></div>`;
+    
+    return `<tr class="border-b border-line last:border-0 hover:bg-bg transition-colors">
+      <td class="py-3 px-4">
+        <div class="flex items-center gap-3">
+          ${img}
+          <div class="min-w-0">
+            <div class="font-semibold text-ink text-[13px] truncate">${esc(m.ComponentName)}</div>
+            <div class="text-[11px] text-muted mt-0.5 truncate">${esc(m.ComponentSKU||m.ComponentID)}</div>
+          </div>
+        </div>
+      </td>
+      <td class="py-3 px-3 text-right">
+        <div class="text-[14px] font-semibold text-ink">${fmtNum(m.Quantity)} <span class="text-[11.5px] text-muted font-normal">${esc(unit)}</span></div>
+      </td>
+      <td class="py-3 pl-3 pr-4 w-[170px]">
+        <div class="relative flex items-center">
+           <input id="actualMat_${m.ProductionMatID}" type="number" step="any" value="${m.Quantity}" class="fld py-2 px-3 pr-11 text-right text-rose-600 font-bold bg-rose-50/50 focus:bg-white border-rose-200 focus:border-rose-500 transition-all shadow-sm" title="Nhập số lượng thực tế"/>
+           <span class="absolute right-3 text-[12px] text-rose-600 font-medium pointer-events-none">${esc(unit)}</span>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const bodyHtml = `
+    <div class="rounded-xl bg-amber-50 border border-amber-200 p-4 text-[13px] text-amber-800 mb-5 flex gap-3 items-start leading-relaxed shadow-sm">
+       <span class="ms text-[22px] shrink-0 text-amber-600">warning</span>
+       <div>Điền chính xác số lượng NVL thực tế đã dùng (bao gồm cả hao hụt, hỏng) và Thành phẩm thực tế thu được để hệ thống tính đúng Giá vốn.</div>
+    </div>
+    
+    <div class="grid grid-cols-2 gap-4 mb-6">
+       <div class="rounded-2xl border border-line bg-bg p-4 flex flex-col justify-center">
+          <div class="text-[12px] text-muted mb-1.5 font-medium">SL Thành phẩm (Kế hoạch)</div>
+          <div class="flex items-center gap-2"><div class="text-[24px] font-bold text-ink">${fmtNum(o.Quantity)}</div><span class="text-[14px] text-muted font-medium">${esc(tpUnit)}</span></div>
+       </div>
+       
+       <div class="rounded-2xl border-2 border-emerald-400 bg-emerald-50 p-4 shadow-sm relative overflow-hidden">
+          <div class="text-[12.5px] text-emerald-800 mb-2 font-bold flex items-center gap-1.5"><span class="ms text-[18px]">check_circle</span>SL Thành phẩm THỰC TẾ nhập kho</div>
+          <div class="relative flex items-center max-w-[200px]">
+             <input id="actualTpQty" type="number" class="fld py-2.5 px-4 pr-12 text-[18px] text-emerald-700 font-bold bg-white border-emerald-300 shadow-sm focus:border-emerald-500 focus:ring focus:ring-emerald-200" value="${o.Quantity}"/>
+             <span class="absolute right-4 text-[14px] text-emerald-600 font-bold pointer-events-none">${esc(tpUnit)}</span>
+          </div>
+       </div>
+    </div>
+    
+    <div class="flex items-center gap-2 mb-3 px-1">
+       <span class="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center shrink-0"><span class="ms text-[18px]">science</span></span>
+       <h4 class="font-bold text-ink text-[15px]">Kê khai NVL thực tế xuất kho</h4>
+    </div>
+    
+    <div class="rounded-2xl border border-line bg-white overflow-hidden shadow-sm">
+       <table class="w-full text-left">
+          <thead class="bg-bg border-b border-line text-muted text-[11px] uppercase tracking-wider font-semibold">
+             <tr>
+                <th class="py-3 px-4">Nguyên vật liệu</th>
+                <th class="py-3 px-3 text-right">Định mức LT</th>
+                <th class="py-3 px-4 text-right w-[170px]">Thực tế dùng</th>
+             </tr>
+          </thead>
+          <tbody>${matHtml}</tbody>
+       </table>
+    </div>
+  `;
+
+  $('#modalBox').innerHTML=modalShell({
+    title:'Chốt hao hụt & Hoàn thành lệnh', 
+    subtitle:o.ProductionID+' · '+o.ProductName, 
+    icon:'fact_check',
+    body: bodyHtml,
+    footer:btnSecondary('Hủy','closeModal()','close')+btnPrimary('Chốt hao hụt & Nhập kho','saveCompleteProduction(\''+id+'\',\''+JSON.stringify(mats.map(m=>m.ProductionMatID)).replace(/"/g,"&quot;")+'\')','check_circle')
+  });
+};
+V223_IMPL["saveCompleteProduction__3753"] = async function(id, matIdsJson) {
+  const actualTp = Number($('#actualTpQty').value)||0;
+  if(actualTp<=0) return toast('SL thành phẩm phải lớn hơn 0','error');
+  const matIds = JSON.parse(matIdsJson.replace(/&quot;/g,'"'));
+  const actualMats = matIds.map(mid => ({ ProductionMatID: mid, ActualQuantity: Number($('#actualMat_'+mid).value) }));
+  if(actualMats.some(m=>!Number.isFinite(m.ActualQuantity)||m.ActualQuantity<0)) return toast('Số lượng NVL thực tế không hợp lệ.','error');
+  
+  if(SAVING)return; setSaving(true); toast('Đang xử lý nhập kho...','info');
+  const r = await gas('completeProductionOrderActuals', id, actualTp, actualMats);
+  setSaving(false);
+  if(r.success) { toast(r.message); closeModal(); await reprime('production','products','movements'); render(); }
+  else toast(r.message, 'error');
+};
+V223_IMPL["startProductionOrder__3840"] = async function(id){
+  if(SAVING) return; setSaving(true); toast('Đang xuất NVL và bắt đầu sản xuất...','info');
+  const r=await gas('updateProductionStatus',id,'Đang sản xuất'); setSaving(false);
+  if(!r||!r.success) return toast((r&&r.message)||'Không thể bắt đầu sản xuất','error');
+  toast(r.message); await reprime('production','products','movements'); await viewProduction(id); renderProductionTab('overview');
+};
+V223_IMPL["openProductionProgressModal__3847"] = async function(id){
+  openModalLoading('Cập nhật tiến độ '+id,'monitoring',620);
+  const r=await detailGet('getProductionDetail',id);
+  if(!r||!r.success){ closeModal(); return toast((r&&r.message)||'Không tải được lệnh','error'); }
+  const o=(r.data&&r.data.order)||{}; const current=Math.max(0,Math.min(100,Number(o.ProgressPercent)||0));
+  const presets=[0,25,50,75,100].map(p=>'<button type="button" onclick="setProductionProgressPreset('+p+')" class="h-10 rounded-xl border border-line bg-white text-[13px] font-semibold hover:border-brand-400 hover:text-brand-600 transition">'+p+'%</button>').join('');
+  const body='<div class="rounded-2xl bg-bg border border-line p-4 mb-4"><div class="flex justify-between text-[12px] mb-2"><span class="text-muted">Tiến độ hiện tại</span><b id="prodProgressPreview" class="text-brand-600">'+current+'%</b></div><div class="h-2.5 rounded-full bg-white overflow-hidden border border-line"><div id="prodProgressBarPreview" class="h-full rounded-full bg-brand-500 transition-all duration-500" style="width:'+current+'%"></div></div></div>'
+    +field('Công đoạn hiện tại *','<input id="prodStage" class="fld" value="'+esc(o.CurrentStage||'Đang sản xuất')+'" placeholder="VD: Cắt phôi, Gia công, Sơn hoàn thiện..."/>')
+    +field('Tiến độ (%)','<div class="grid grid-cols-5 gap-2 mb-3">'+presets+'</div><input id="prodProgressPercent" type="number" min="0" max="100" step="1" value="'+current+'" oninput="previewProductionProgress()" class="fld"/>')
+    +field('Ghi chú','<textarea id="prodProgressNote" rows="3" class="fld" placeholder="Kết quả công đoạn, vướng mắc hoặc bàn giao ca..."></textarea>')
+    +'<div class="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-[12px] text-amber-800">Đặt tiến độ 100% chỉ ghi nhận tiến độ. Hệ thống vẫn yêu cầu xác nhận hoàn tất và số lượng thực tế trước khi nhập kho.</div>';
+  $('#modalBox').innerHTML=modalShell({title:'Cập nhật tiến độ sản xuất',subtitle:id+' · '+(o.ProductName||''),icon:'monitoring',body:body,footer:btnSecondary('Hủy','viewProduction(\''+id+'\')','close')+btnPrimary('Lưu tiến độ','saveProductionProgress(\''+id+'\')','save')});
+};
+V223_IMPL["saveProductionProgress__3862"] = async function(id){
+  const stage=String(($('#prodStage')||{}).value||'').trim(); const percent=Number(($('#prodProgressPercent')||{}).value);
+  if(!stage) return toast('Nhập công đoạn hiện tại','error');
+  if(!Number.isFinite(percent)||percent<0||percent>100) return toast('Tiến độ phải từ 0 đến 100%','error');
+  if(SAVING)return; setSaving(true); toast('Đang lưu tiến độ...','info');
+  const r=await gas('updateProductionProgress',id,{CurrentStage:stage,ProgressPercent:percent,Note:(($('#prodProgressNote')||{}).value||'')}); setSaving(false);
+  if(!r||!r.success) return toast((r&&r.message)||'Không lưu được tiến độ','error');
+  toast(r.message); await reprime('production'); renderProductionTab('overview');
+  if(r.data&&r.data.suggestComplete) return showProductionCompletionSuggestion(id);
+  return viewProduction(id);
+};
+V223_IMPL["viewProduction__3878"] = async function(id){
+  openModalLoading('Lệnh sản xuất '+id,'precision_manufacturing',820);
+  const r=await detailGet('getProductionDetail',id);
+  if(!r.success){ closeModal(); return toast(r.message,'error'); }
+  const d=r.data; const o=d.order||{}; const status=o.Status||'Đã lên lệnh'; const progress=productionProgressValue(o);
+  const materials=(d.materials||[]).filter(x=>String(x.LineType||'Material')!=='MoneyCost'&&x.ComponentID);
+  const moneyCostTotal=Number(o.MoneyCostTotal||0);
+  const logs=d.progressLogs||[];
+  const progressHtml='<div class="rounded-2xl border border-line bg-bg p-4 mb-4"><div class="flex items-center justify-between gap-3 mb-2"><div><div class="text-[11px] text-muted">Công đoạn hiện tại</div><div class="font-semibold text-ink">'+esc(o.CurrentStage||'Chưa cập nhật')+'</div></div><b class="text-[22px] text-brand-600">'+progress+'%</b></div><div class="h-2.5 rounded-full bg-white border border-line overflow-hidden"><div class="h-full rounded-full bg-brand-500 transition-all duration-700" style="width:'+progress+'%"></div></div><div class="grid grid-cols-2 gap-3 mt-3 text-[11px]"><div><span class="text-muted">Bắt đầu:</span> <b class="text-ink">'+productionDateTime(o.StartedAt)+'</b></div><div class="text-right"><span class="text-muted">Hoàn thành:</span> <b class="text-ink">'+productionDateTime(o.CompletedAt)+'</b></div></div></div>';
+  const logHtml=logs.length?'<div class="space-y-2">'+logs.map(l=>'<div class="flex gap-3 rounded-xl border border-line bg-white px-3 py-2.5"><div class="w-9 h-9 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center shrink-0"><b class="text-[11px]">'+Math.round(Number(l.ProgressPercent)||0)+'%</b></div><div class="min-w-0 flex-1"><div class="flex justify-between gap-2"><b class="text-[12px] text-ink">'+esc(l.Stage||'-')+'</b><span class="text-[10px] text-muted shrink-0">'+productionDateTime(l.LogDate||l.CreatedAt)+'</span></div>'+(l.Note?'<div class="text-[11px] text-muted mt-1">'+esc(l.Note)+'</div>':'')+'</div></div>').join('')+'</div>':'<div class="rounded-xl border border-dashed border-line px-4 py-5 text-center text-[12px] text-muted">Chưa có nhật ký tiến độ.</div>';
+  let footer=btnSecondary('Xóa','confirmDelete(\'production\',\''+id+'\')','delete');
+  if(status==='Đã lên lệnh') footer+=btnPrimary('Bắt đầu sản xuất','startProductionOrder(\''+id+'\')','play_arrow');
+  if(status==='Đang sản xuất') footer+=btnSecondary('Cập nhật tiến độ','openProductionProgressModal(\''+id+'\')','monitoring')+btnPrimary('Hoàn thành lệnh','openCompleteProductionModal(\''+id+'\')','check_circle');
+  footer+=btnSecondary('Đóng','closeModal()','close');
+  $('#modalBox').innerHTML=modalShell({title:'Lệnh sản xuất '+id, subtitle:o.ProductName||'', icon:'precision_manufacturing',
+    body:'<div class="flex items-center justify-between text-[13px] mb-4"><span class="text-muted">Ngày SX: <b class="text-ink">'+fmtDate(o.ProductionDate)+'</b></span>'+badge(status)+'</div>'
+      +progressHtml
+      +'<div class="grid grid-cols-3 gap-3 mb-4">'+miniStat('SL kế hoạch',fmtNum(o.Quantity)+' SP')+miniStat('SL thực tế',o.ActualQuantity===''||o.ActualQuantity==null?'-':fmtNum(o.ActualQuantity)+' SP')+miniStat('Giá thành/SP',fmtVND(o.UnitCost))+'</div>'
+      +'<h4 class="font-semibold text-ink text-[14px] mb-2 flex items-center gap-2"><span class="ms text-amber-600 text-[19px]">science</span>Nguyên vật liệu tiêu hao</h4>'
+      +detailItemsTable([{label:'NVL',key:'ComponentName'},{label:'Định mức',right:true,render:x=>fmtNum(x.Quantity)},{label:'Thực tế',right:true,render:x=>x.ActualQuantity===''||x.ActualQuantity==null?'-':fmtNum(x.ActualQuantity)},{label:'Thành tiền',right:true,render:x=>fmtVND((Number(x.ActualQuantity)||Number(x.Quantity)||0)*Number(x.UnitCost||0))}],materials)
+      +'<h4 class="font-semibold text-ink text-[14px] mt-4 mb-2 flex items-center gap-2"><span class="ms text-indigo-600 text-[19px]">payments</span>Chi phí sản xuất không trừ kho</h4>'
+      +'<div class="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 space-y-2 text-[12px]"><div class="flex justify-between"><span class="text-muted">Chi phí tiền từ BOM</span><b class="text-indigo-700">'+fmtVND(moneyCostTotal)+'</b></div><div class="flex justify-between"><span class="text-muted">Nhân công dự tính</span><b>'+fmtVND(o.LaborCost)+'</b></div><div class="flex justify-between"><span class="text-muted">Khấu hao/Điện nước</span><b>'+fmtVND(o.OverheadCost)+'</b></div></div>'
+      +'<h4 class="font-semibold text-ink text-[14px] mt-4 mb-2 flex items-center gap-2"><span class="ms text-brand-600 text-[19px]">timeline</span>Lịch sử tiến độ</h4>'+logHtml
+      +(o.Notes?'<div class="mt-3 rounded-xl bg-bg border border-line px-4 py-2.5 text-[13px] text-muted">'+esc(o.Notes)+'</div>':''),
+    footer:footer});
+};
+V223_IMPL["renderProjectsTab__3936"] = async function(){
+  const body=$('#tabBody'); if(!body) return;
+  const projects=await load('projects','getProjects');
+  const active=projects.filter(x=>String(x.Status).toUpperCase()!=='COMPLETED').length;
+  const machines=projects.reduce((s,x)=>s+(Number(x.MachineQty)||0),0);
+  const high=projects.filter(x=>String(x.RiskLevel).toUpperCase()==='HIGH').length;
+  const ready=projects.length?Math.round(projects.reduce((s,x)=>s+(Number(x.CTBPercent)||0),0)/projects.length):0;
+  const actions=canAdd('projects')?'<div class="flex justify-end mb-4">'+btnPrimary('Tạo dự án','openProjectForm()','add')+'</div>':'';
+  const kpis='<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-5">'
+    +kpiCard('Dự án đang chạy',active,'account_tree','bg-blue-50 text-blue-600')
+    +kpiCard('Tổng số máy',machines,'precision_manufacturing','bg-cyan-50 text-cyan-600')
+    +kpiCard('Dự án rủi ro cao',high,'warning','bg-rose-50 text-rose-600')
+    +kpiCard('CTB trung bình',ready+'%','inventory','bg-emerald-50 text-emerald-600')+'</div>';
+  const columns=[
+    {label:'Mã dự án',key:'ProjectCode'},
+    {label:'Tên dự án',key:'ProjectName'},
+    {label:'Khách hàng',key:'CustomerName'},
+    {label:'Số máy',right:true,render:r=>'<b>'+fmtNum(r.MachineQty||0)+'</b>'},
+    {label:'FAT kế hoạch',render:r=>fmtDate(r.TargetFATDate)||'-'},
+    {label:'Tiến độ',render:r=>amcvnProgress(r.ProgressPercent)},
+    {label:'Rủi ro',render:r=>badge(amcvnStatusLabel(r.RiskLevel))},
+    {label:'Trạng thái',render:r=>badge(amcvnStatusLabel(r.Status))}
+  ];
+  body.innerHTML=actions+kpis+card(dataTable(columns,projects,{empty:'Chưa có dự án. Hãy tạo dự án đầu tiên.',idKey:'ProjectID',onRowClick:'openProjectDetail'}));
+};
+V223_IMPL["openProjectDetail__3962"] = async function(projectId){
+  const p=$('#page'); p.innerHTML=loadingBlock(); p.dataset.module='projects-detail';
+  const r=await gas('getProjectDetail',projectId);
+  if(!r||!r.success){ p.innerHTML=emptyState((r&&r.message)||'Không tải được dự án'); return; }
+  const d=r.data, x=d.project, s=d.summary||{}, machines=d.machines||[];
+  const actions=(canEdit('projects')?btnSecondary('Sửa dự án','openProjectForm('+jsArg(projectId)+')','edit'):'')
+    +(canAdd('projects')?btnPrimary('Thêm máy','openMachineForm('+jsArg(projectId)+')','add'):'');
+  const head='<button onclick="go(\'projects\')" class="text-[13px] text-brand-600 font-semibold inline-flex items-center gap-1 mb-4"><span class="ms">arrow_back</span>Danh sách dự án</button>'
+    +pageHeader(x.ProjectCode+' — '+x.ProjectName,(x.CustomerName||'Chưa gán khách hàng')+' · PM: '+(x.PM||'-')+' · SCM: '+(x.SCM||'-'),actions);
+  const kpis='<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-5">'
+    +kpiCard('Tổng số máy',s.total||0,'precision_manufacturing','bg-cyan-50 text-cyan-600')
+    +kpiCard('Đúng kế hoạch',s.onTrack||0,'check_circle','bg-emerald-50 text-emerald-600')
+    +kpiCard('Có rủi ro',s.atRisk||0,'warning','bg-amber-50 text-amber-600')
+    +kpiCard('Bị chặn',s.blocked||0,'block','bg-rose-50 text-rose-600')+'</div>';
+  const columns=[
+    {label:'Mã máy',key:'MachineCode'}, {label:'Tên máy',key:'MachineName'},
+    {label:'Model',key:'MachineModel'}, {label:'Công đoạn',render:m=>badge(amcvnStatusLabel(m.CurrentStage))},
+    {label:'Tiến độ',render:m=>amcvnProgress(m.ProgressPercent)},
+    {label:'CTB',render:m=>'<div class="text-[12px]"><b>'+Math.round(Number(m.CTBPercent)||0)+'%</b><div class="text-muted">'+esc(amcvnStatusLabel(m.CTBStatus))+'</div></div>'},
+    {label:'FAT kế hoạch',render:m=>fmtDate(m.PlanFATDate)||'-'}, {label:'Owner',key:'Owner'}
+  ];
+  p.innerHTML=head+kpis+card('<div class="p-4 border-b border-line"><b>Danh sách máy</b></div>'+dataTable(columns,machines,{empty:'Dự án chưa có máy.',idKey:'MachineID',onRowClick:'openMachineDetail'}));
+};
+V223_IMPL["openMachineDetail__3986"] = async function(machineId){
+  STATE.route='projects';setActiveNav();if(typeof syncMobileNav==='function')syncMobileNav();
+  const p=$('#page'); p.innerHTML=loadingBlock(); p.dataset.module='machine-detail';
+  const r=await gas('getMachineDetail',machineId);
+  if(!r||!r.success){ p.innerHTML=emptyState((r&&r.message)||'Không tải được máy'); return; }
+  const d=r.data,m=d.machine,project=d.project||{},mods=d.modules||[],ctb=d.ctb||{},shortages=d.shortages||[];
+  const actions=(canEdit('projects')?btnSecondary('Sửa máy','openMachineForm('+jsArg(project.ProjectID)+','+jsArg(machineId)+')','edit'):'')
+    +(can('bom')?btnSecondary('Machine BOM','openMachineBOM('+jsArg(machineId)+')','account_tree'):'')
+    +(can('material_control')?btnSecondary('Material CTB','openMachineMaterials('+jsArg(machineId)+')','inventory'):'')
+    +(can('production')?btnSecondary('Assembly Execution','openMachineExecution('+jsArg(machineId)+')','engineering'):'')
+    +(can('quality')?btnSecondary('Quality & FAT','openMachineQuality('+jsArg(machineId)+')','fact_check'):'')
+    +(canAdd('projects')?btnPrimary('Thêm module','openModuleForm('+jsArg(machineId)+')','add'):'');
+  const head='<button onclick="openProjectDetail('+esc(jsArg(project.ProjectID))+')" class="text-[13px] text-brand-600 font-semibold inline-flex items-center gap-1 mb-4"><span class="ms">arrow_back</span>'+esc(project.ProjectCode||'Dự án')+'</button>'
+    +pageHeader(m.MachineCode+' — '+(m.MachineName||m.MachineCode),(m.MachineModel||'Chưa có model')+' · Serial: '+(m.SerialNumber||'-'),actions);
+  const kpis='<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-5">'
+    +kpiCard('Tiến độ',Math.round(Number(m.ProgressPercent)||0)+'%','speed','bg-brand-50 text-brand-600')
+    +kpiCard('CTB',Math.round(Number(ctb.percent)||0)+'% · '+esc(amcvnStatusLabel(ctb.status)),'inventory',ctb.status==='BLOCKED'?'bg-rose-50 text-rose-600':'bg-emerald-50 text-emerald-600')
+    +kpiCard('Critical shortage',ctb.criticalShortage||0,'report','bg-rose-50 text-rose-600')
+    +kpiCard('Material ready',(ctb.readyLines||0)+' / '+(ctb.totalLines||0),'checklist','bg-blue-50 text-blue-600')+'</div>';
+  const warn=m.BlockedReason?'<div class="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700"><b>Lý do bị chặn:</b> '+esc(m.BlockedReason)+'</div>':'';
+  const columns=[
+    {label:'Mã module',key:'ModuleCode'}, {label:'Tên module',key:'ModuleName'}, {label:'Loại',key:'ModuleType'},
+    {label:'Owner',key:'Owner'}, {label:'Vật tư',render:x=>badge(amcvnStatusLabel(x.MaterialStatus))},
+    {label:'Lắp ráp',render:x=>badge(amcvnStatusLabel(x.AssemblyStatus))}, {label:'Tiến độ',render:x=>amcvnProgress(x.ProgressPercent)},
+    {label:'',render:x=>(canEdit('projects')?'<button onclick="event.stopPropagation();openModuleForm('+esc(jsArg(machineId))+','+esc(jsArg(x.ModuleID))+')" class="text-brand-600"><span class="ms">edit</span></button>':'')}
+  ];
+  const shortageCols=[{label:'Critical',render:x=>badge(x.CriticalLevel||'C')},{label:'SKU/PN',key:'SKU'},{label:'Vật tư',key:'ProductName'},{label:'Cần',right:true,key:'RequiredQty'},{label:'Đã cấp',right:true,key:'AllocatedQty'},{label:'Thiếu',right:true,render:x=>'<b class="text-rose-600">'+fmtNum(x.ShortageQty||0)+'</b>'},{label:'Ngày cần',render:x=>fmtDate(x.RequiredDate)||'-'},{label:'Owner',key:'Owner'}];
+  const shortageCard=shortages.length?card('<div class="p-4 border-b border-line flex items-center justify-between"><div><b class="text-rose-700">Critical / Shortage cần xử lý</b><div class="text-[11px] text-muted">Các dòng đang ngăn máy đạt CTB</div></div><button onclick="openMachineMaterials('+esc(jsArg(machineId))+')" class="text-[12px] font-semibold text-brand-600">Xem tất cả</button></div>'+dataTable(shortageCols,shortages,{idKey:'RequirementID',onRowClick:'openMaterialRequirement'}),'mb-5'):'';
+  p.innerHTML=head+kpis+warn+shortageCard+card('<div class="p-4 border-b border-line"><b>Module của máy</b></div>'+dataTable(columns,mods,{empty:'Máy chưa có module.'}));
+};
+V223_IMPL["openProjectForm__4017"] = async function(projectId){
+  // Giữ ID form ngoài thuộc tính onclick. Cách này tránh trình duyệt cắt chuỗi
+  // tại dấu ngoặc kép khi tạo mới (projectId rỗng -> saveProject("")).
+  window.AMCVN_PROJECT_FORM_ID=String(projectId||'');
+  let x={};
+  if(projectId){ const r=await gas('getProjectDetail',projectId); if(!r||!r.success){toast(r&&r.message||'Không tải được dự án','error');return;} x=r.data.project||{}; }
+  let customers=[]; if(can('sales')){ try{ customers=await load('customers','getCustomers'); }catch(_){ console.warn('[openProjectForm]', (_ && _.message) || String(_)); } }
+  const customerNames=customers.map(c=>c.CustomerName).filter(Boolean);
+  const body=row2(field('Mã dự án *',inp('pjCode','Ví dụ: AG-P27-DVT','text',x.ProjectCode)),field('Tên dự án *',inp('pjName','Tên dự án','text',x.ProjectName)))
+    +row2(field('Khách hàng',dataListInput('pjCustomer','Tên khách hàng',x.CustomerName,customerNames)),field('Loại dự án',sel('pjType',['Machine Build','Retrofit','Service'],x.ProjectType||'Machine Build')))
+    +row2(field('Project Manager',inp('pjPM','Họ tên PM','text',x.PM)),field('SCM',inp('pjSCM','Họ tên SCM','text',x.SCM)))
+    +row3(field('Kickoff',inp('pjKickoff','','date',amcvnDateValue(x.KickoffDate))),field('FAT kế hoạch',inp('pjFAT','','date',amcvnDateValue(x.TargetFATDate))),field('Giao hàng',inp('pjDelivery','','date',amcvnDateValue(x.TargetDeliveryDate))))
+    +row3(field('Trạng thái',sel('pjStatus',['PLANNING','ACTIVE','ON_HOLD','COMPLETED'],x.Status||'PLANNING')),field('Ưu tiên',sel('pjPriority',AMCVN_PRIORITY_OPTIONS,x.Priority||'MEDIUM')),field('Rủi ro',sel('pjRisk',AMCVN_RISK_OPTIONS,x.RiskLevel||'LOW')))
+    +field('Ghi chú',txt('pjNotes','Thông tin cần lưu ý',x.Notes));
+  const remove=projectId&&canDelete('projects')?'<button onclick="confirmAmcvnDelete(\'project\','+esc(jsArg(projectId))+')" class="mr-auto px-4 py-2.5 rounded-xl text-[13px] font-semibold text-rose-600 hover:bg-rose-50 inline-flex items-center gap-1"><span class="ms">delete</span>Xóa</button>':'';
+  const footer=remove+btnSecondary('Hủy','closeModal()','close')+btnPrimary(projectId?'Lưu thay đổi':'Tạo dự án','saveProjectFromForm()','save');
+  openModal(modalShell({title:projectId?'Cập nhật dự án':'Tạo dự án mới',subtitle:'AMCVN Project Master',icon:'account_tree',body,footer}),760);
+};
+V223_IMPL["saveProjectFromForm__4035"] = async function(){
+  return saveProject(window.AMCVN_PROJECT_FORM_ID||'');
+};
+V223_IMPL["saveProject__4038"] = async function(projectId){
+  const data={ProjectCode:amcvnVal('pjCode'),ProjectName:amcvnVal('pjName'),CustomerName:amcvnVal('pjCustomer'),ProjectType:amcvnVal('pjType'),PM:amcvnVal('pjPM'),SCM:amcvnVal('pjSCM'),KickoffDate:amcvnVal('pjKickoff'),TargetFATDate:amcvnVal('pjFAT'),TargetDeliveryDate:amcvnVal('pjDelivery'),Status:amcvnVal('pjStatus'),Priority:amcvnVal('pjPriority'),RiskLevel:amcvnVal('pjRisk'),Notes:amcvnVal('pjNotes')};
+  const r=projectId?await gas('updateProject',projectId,data):await gas('createProject',data);
+  if(!r||!r.success){toast(r&&r.message||'Không lưu được dự án','error');return;}
+  toast(r.message);closeModal();window.AMCVN_PROJECT_FORM_ID='';await reprime('projects'); if(projectId) openProjectDetail(projectId); else renderProjectsTab();
+};
+V223_IMPL["openMachineForm__4045"] = async function(projectId,machineId){
+  let m={ProjectID:projectId};
+  if(machineId){const r=await gas('getMachineDetail',machineId);if(!r||!r.success){toast(r&&r.message||'Không tải được máy','error');return;}m=r.data.machine||m;}
+  let products=[]; try{const pr=await gas('getAMCVNProductOptions');if(pr&&pr.success)products=pr.data||[];}catch(_){ console.warn('[openMachineForm]', (_ && _.message) || String(_)); }
+  const productOptions=[{v:'',t:'-- Chọn thành phẩm/BOM --'}].concat(products.map(p=>({v:p.ProductID,t:(p.SKU?p.SKU+' — ':'')+p.ProductName})));
+  const body=row2(field('Mã máy *',inp('mcCode','Ví dụ: P27-DVT-01','text',m.MachineCode)),field('Tên máy',inp('mcName','Tên máy','text',m.MachineName)))
+    +row3(field('Model',inp('mcModel','Model','text',m.MachineModel)),field('Serial number',inp('mcSerial','Serial','text',m.SerialNumber)),field('Thành phẩm/BOM',sel('mcProduct',productOptions,m.ProductID||''),'Dùng để sinh nhu cầu vật tư từ BOM'))
+    +row3(field('Bắt đầu kế hoạch',inp('mcStart','','date',amcvnDateValue(m.PlanStartDate))),field('FAT kế hoạch',inp('mcFAT','','date',amcvnDateValue(m.PlanFATDate))),field('Xuất hàng',inp('mcShip','','date',amcvnDateValue(m.PlanShipDate))))
+    +row2(field('Owner',inp('mcOwner','Người phụ trách','text',m.Owner)),field('Lead Engineer',inp('mcLead','Kỹ sư trưởng','text',m.LeadEngineer)))
+    +row3(field('Công đoạn',sel('mcStage',AMCVN_STAGE_OPTIONS,m.CurrentStage||'PLANNING')),field('Tiến độ (%)',inp('mcProgress','0','number',m.ProgressPercent||0)),field('Rủi ro',sel('mcRisk',AMCVN_RISK_OPTIONS,m.RiskLevel||'LOW')))
+    +field('Lý do bị chặn',txt('mcBlocked','Để trống nếu không bị chặn',m.BlockedReason));
+  const remove=machineId&&canDelete('projects')?'<button onclick="confirmAmcvnDelete(\'machine\','+esc(jsArg(machineId))+','+esc(jsArg(projectId))+')" class="mr-auto px-4 py-2.5 rounded-xl text-[13px] font-semibold text-rose-600 hover:bg-rose-50 inline-flex items-center gap-1"><span class="ms">delete</span>Xóa</button>':'';
+  const footer=remove+btnSecondary('Hủy','closeModal()','close')+btnPrimary(machineId?'Lưu thay đổi':'Tạo máy','saveMachine('+jsArg(projectId)+','+jsArg(machineId||'')+')','save');
+  openModal(modalShell({title:machineId?'Cập nhật máy':'Thêm máy vào dự án',subtitle:'Mỗi máy là một đối tượng độc lập',icon:'precision_manufacturing',body,footer}),760);
+};
+V223_IMPL["saveMachine__4060"] = async function(projectId,machineId){
+  const data={ProjectID:projectId,MachineCode:amcvnVal('mcCode'),MachineName:amcvnVal('mcName'),MachineModel:amcvnVal('mcModel'),SerialNumber:amcvnVal('mcSerial'),ProductID:amcvnVal('mcProduct'),PlanStartDate:amcvnVal('mcStart'),PlanFATDate:amcvnVal('mcFAT'),PlanShipDate:amcvnVal('mcShip'),Owner:amcvnVal('mcOwner'),LeadEngineer:amcvnVal('mcLead'),CurrentStage:amcvnVal('mcStage'),ProgressPercent:amcvnVal('mcProgress'),RiskLevel:amcvnVal('mcRisk'),BlockedReason:amcvnVal('mcBlocked')};
+  const r=machineId?await gas('updateMachine',machineId,data):await gas('createMachine',data);
+  if(!r||!r.success){toast(r&&r.message||'Không lưu được máy','error');return;}
+  toast(r.message);closeModal();delete STATE.cache.projects; if(machineId) openMachineDetail(machineId); else openProjectDetail(projectId);
+};
+V223_IMPL["openMachineBOM__4119"] = async function(machineId,versionId){
+  STATE.route='bom';setActiveNav();if(typeof syncMobileNav==='function')syncMobileNav();
+  const p=$('#page');p.innerHTML=loadingBlock();p.dataset.module='machine-bom';
+  const seq=++MACHINE_BOM_LOAD_SEQ;
+
+  // Gọi API MỚI getMachineBOMTree để có thêm cấu trúc cây
+  const scope=machineId+'|'+(versionId||'');
+  if(BOM_SCOPE_V224!==scope){BOM_QUERY_V224={paged:true,page:1};BOM_TREE_STATE.search='';BOM_TREE_STATE.filterCritical='';BOM_TREE_STATE.filterMissingDRI=false;BOM_TREE_STATE.selectedModules={};}
+  BOM_SCOPE_V224=scope;
+  const r=await gas('getMachineBOMTree',machineId,versionId||'',BOM_QUERY_V224);
+  if(seq!==MACHINE_BOM_LOAD_SEQ||STATE.route!=='bom'||p.dataset.module!=='machine-bom')return;
+  if(!r||!r.success){p.innerHTML=emptyState((r&&r.message)||'Không tải được BOM máy');return;}
+
+  const data=r.data||{};
+
+  // Đóng gói lại theo cấu trúc cache cũ để không phá các hàm khác đang dùng
+  const d = {
+    machine: data.machine || {},
+    project: data.project || {},
+    versions: data.versions || [],
+    selectedVersion: data.selectedVersion || null,
+    lines: data.lines || [],
+    pagination: data.pagination || null,
+    totals: data.totals || {},
+    tree: data.tree || null,           // ← MỚI: cây phân cấp
+    modules: data.modules || [],        // toàn bộ cụm của máy, kể cả cụm chưa có NVL
+    ecnLogs: [],                        // Lazy load — chỉ tải khi user mở tab lịch sử
+    historyLoaded: false,
+    optionsLoaded: false
+  };
+
+  APP_CONTEXT={projectId:(d.machine||{}).ProjectID||'',machineId:machineId};try{sessionStorage.setItem('amcvn:phase1:context',JSON.stringify(APP_CONTEXT));}catch(_){}updateContextButton();
+  MACHINE_BOM_CACHE = d;
+  renderMachineBOM(d);
+};
+V223_IMPL["saveMachineBOMVersion__4246"] = async function(machineId){
+  const r=await gas('createMachineBOMVersion',{MachineID:machineId,VersionNo:amcvnVal('mbvNo'),BaseVersionID:amcvnVal('mbvBase'),ECNNo:amcvnVal('mbvECN'),ECNNote:amcvnVal('mbvNote'),EffectiveDate:amcvnVal('mbvEffective')});
+  if(!r||!r.success)return toast(r&&r.message||'Không tạo được phiên bản BOM','error');
+  toast(r.message);closeModal();openMachineBOM(machineId,r.data.BOMVersionID);
+};
+V223_IMPL["deleteMachineBOMVersion__4251"] = async function(){
+  const d=MACHINE_BOM_CACHE||{},v=d.selectedVersion;if(!v||!(await appDecision_('Xóa bản nháp BOM '+v.VersionNo+' và toàn bộ dòng bên trong?')))return;
+  const r=await gas('deleteMachineBOMVersion',v.BOMVersionID);if(!r||!r.success)return toast(r&&r.message||'Không xóa được BOM','error');
+  toast(r.message);openMachineBOM((d.machine||{}).MachineID);
+};
+V223_IMPL["openMachineBOMLineForm__4256"] = async function(lineId){
+  const d=MACHINE_BOM_CACHE||{},v=d.selectedVersion;if(!v||MACHINE_BOM_WRITING)return;
+  if(!d.optionsLoaded){
+    toast('Đang tải danh mục vật tư…','info');
+    const r=await gas('getMachineBOMOptions',d.machine.MachineID);
+    if(MACHINE_BOM_CACHE!==d||STATE.route!=='bom')return;
+    if(!r||!r.success)return toast(r&&r.message||'Không tải được danh mục','error');
+    d.products=r.data.products||[];d.modules=r.data.modules||[];d.optionsLoaded=true;
+  }
+  const x=(d.lines||[]).find(r=>String(r.BOMLineID)===String(lineId||''))||{};
+  const moduleOpts=[{v:'',t:'-- Toàn máy --'}].concat((d.modules||[]).map(m=>({v:m.ModuleID,t:(m.ModuleCode?m.ModuleCode+' — ':'')+m.ModuleName})));
+  const productOpts=[{v:'',t:'-- Chọn sản phẩm --'}].concat((d.products||[]).map(p=>({v:p.ProductID,t:(p.SKU?p.SKU+' · ':'')+(p.PartNumber?p.PartNumber+' · ':'')+p.ProductName})));
+  const body=row2(field('Cụm chi tiết',sel('mblModule',moduleOpts,x.ModuleID)),field('Mã bản vẽ cụm',inp('mblModuleDrawing','Drawing No. của cụm','text',x.ModuleDrawingNo)))
+    +field('Sản phẩm *',sel('mblProduct',productOpts,x.ProductID),'Có thể tìm bằng cách gõ ký tự đầu trong danh sách; hiển thị SKU · Mã hàng · Tên')
+    +row3(field('Số cụm/máy',inp('mblModuleQty','1','number',x.ModuleQty==null?1:x.ModuleQty)),field('Số lượng/cụm',inp('mblPerModule','1','number',x.QtyPerModule==null?1:x.QtyPerModule)),field('Số lượng/máy',inp('mblPerMachine','Tự tính nếu trống','number',x.QtyPerMachine)))
+    +row3(field('Dự phòng',inp('mblSpare','0','number',x.SpareQty||0)),field('Critical',sel('mblCritical',['A','B','C'],x.CriticalLevel||'C')),field('Đơn vị',inp('mblUnit','PCS','text',x.Unit)))
+    +row3(field('Nhóm BOM',inp('mblGroup','Mechanical / Electrical','text',x.BOMGroup)),field('Nguồn cung',inp('mblSource','Local / China / Stock','text',x.SourceType)),field('DRI',inp('mblDRI','Người phụ trách','text',x.DRI)))
+    +field('Ghi chú',txt('mblNotes','Ghi chú dòng BOM',x.Notes));
+  openModal(modalShell({title:lineId?'Sửa dòng BOM':'Thêm dòng BOM',subtitle:'Chỉ áp dụng trên phiên bản DRAFT',icon:'format_list_numbered',body,footer:btnSecondary('Hủy','closeModal()','close')+btnPrimary(lineId?'Lưu thay đổi':'Thêm dòng','saveMachineBOMLine('+jsArg(lineId||'')+')','save')}),820);
+};
+V223_IMPL["saveMachineBOMLine__4276"] = async function(lineId){
+  if(MACHINE_BOM_WRITING)return;
+  const d=MACHINE_BOM_CACHE||{},v=d.selectedVersion;
+  const data={BOMVersionID:v.BOMVersionID,ModuleID:amcvnVal('mblModule'),ModuleDrawingNo:amcvnVal('mblModuleDrawing'),ProductID:amcvnVal('mblProduct'),ModuleQty:amcvnVal('mblModuleQty'),QtyPerModule:amcvnVal('mblPerModule'),QtyPerMachine:amcvnVal('mblPerMachine'),SpareQty:amcvnVal('mblSpare'),CriticalLevel:amcvnVal('mblCritical'),Unit:amcvnVal('mblUnit'),BOMGroup:amcvnVal('mblGroup'),SourceType:amcvnVal('mblSource'),DRI:amcvnVal('mblDRI'),Notes:amcvnVal('mblNotes')};
+  MACHINE_BOM_WRITING=true;setSaving(true);
+  try {
+  const r=lineId?await gas('updateMachineBOMLine',lineId,data):await gas('createMachineBOMLine',v.BOMVersionID,data);
+  if(!r||!r.success)return toast(r&&r.message||'Không lưu được dòng BOM','error');
+  toast(r.message);closeModal();
+  if(!r.data||!r.data.BOMLineID){await openMachineBOM(d.machine.MachineID,v.BOMVersionID);return;}
+  await openMachineBOM(d.machine.MachineID,v.BOMVersionID);
+  } finally { MACHINE_BOM_WRITING=false;setSaving(false); }
+};
+V223_IMPL["deleteMachineBOMLine__4290"] = async function(lineId){
+  if(MACHINE_BOM_WRITING||!(await appDecision_('Xóa dòng BOM này?')))return;
+  const d=MACHINE_BOM_CACHE||{},v=d.selectedVersion;if(!v)return;
+  MACHINE_BOM_WRITING=true;
+  try {
+    const r=await gas('deleteMachineBOMLine',lineId,v.BOMVersionID);
+    if(!r||!r.success)return toast(r&&r.message||'Không xóa được dòng BOM','error');
+    await openMachineBOM(d.machine.MachineID,v.BOMVersionID);toast(r.message);
+  } finally { MACHINE_BOM_WRITING=false; }
+};
+V223_IMPL["loadMachineBOMHistory__4308"] = async function(){
+  const d=MACHINE_BOM_CACHE;if(!d)return;
+  const r=await gas('getMachineBOMHistory',d.machine.MachineID);
+  if(!r||!r.success)return toast(r&&r.message||'Không tải được lịch sử','error');
+  d.ecnLogs=r.data||[];d.historyLoaded=true;
+  if(MACHINE_BOM_CACHE===d&&STATE.route==='bom'&&$('#page').dataset.module==='machine-bom')renderMachineBOM(d);
+};
+V223_IMPL["readMachineBOMWorkbook__4363"] = async function(file){
+  await napThuVien('xlsx');
+  const wb=XLSX.read(new Uint8Array(await file.arrayBuffer()),{type:'array',cellDates:true});
+  return wb.SheetNames.map(name=>{
+    const ws=wb.Sheets[name],aoa=XLSX.utils.sheet_to_json(ws,{header:1,blankrows:true,defval:'',range:0});
+    // Expand explicit merged cells only; never carry a previous module into unrelated rows.
+    (ws['!merges']||[]).forEach(m=>{const v=(aoa[m.s.r]||[])[m.s.c];for(let r=m.s.r;r<=m.e.r;r++){aoa[r]=aoa[r]||[];for(let c=m.s.c;c<=m.e.c;c++)if(aoa[r][c]==null||aoa[r][c]==='')aoa[r][c]=v;}});
+    return {name,aoa};
+  });
+};
+V223_IMPL["previewMachineBOMFile__4377"] = async function(file){
+  try{
+    const d=MACHINE_BOM_CACHE||{},v=d.selectedVersion;
+    if(!d.machine)throw new Error('Chưa chọn máy.');
+    if(v&&v.Status!=='DRAFT')throw new Error('Hãy tạo bản nháp trước khi nhập Excel.');
+    const sheets=await readMachineBOMWorkbook(file);let selected=-1;
+    sheets.forEach((s,i)=>{try{s.rows=parseMachineBOMExcel(s.aoa);s.rows.forEach(r=>r.sourceSheet=s.name);if(selected<0&&s.rows.length)selected=i;}catch(e){ console.warn('[previewMachineBOMFile]', (e && e.message) || String(e)); s.error=e.message;}});
+    if(selected<0)throw new Error('Không tìm thấy sheet có dòng BOM hợp lệ.');
+    MACHINE_BOM_IMPORT={fileName:file.name,sheets,index:selected,machineId:d.machine.MachineID,versionId:v?v.BOMVersionID:'',versionNo:v?v.VersionNo:'v1.0'};
+    renderMachineBOMImportSetup();
+  }catch(e){ console.warn('[previewMachineBOMFile]', (e && e.message) || String(e)); toast('Không đọc được BOM: '+(e.message||e),'error');}
+};
+V223_IMPL["checkMachineBOMImport__4402"] = async function(){
+  if(MACHINE_BOM_IMPORT_BUSY)return;
+  const s=MACHINE_BOM_IMPORT;if(!s)return;
+  if(!s.versionId)s.versionNo=amcvnVal('mbImportVersion');
+  MACHINE_BOM_IMPORT_BUSY=true;setSaving(true);
+  try{
+    const r=await gas('previewMachineBOMImport',s.versionId,s.sheets[s.index].rows,{machineId:s.machineId,versionNo:s.versionNo,createMissingProducts:true});
+    if(!r||!r.success)throw new Error(r&&r.message||'Không kiểm tra được BOM');
+    const d=r.data;s.preview=d;
+    const body='<p class="mb-3">Thêm <b>'+d.imported+'</b> dòng BOM · Tạo <b>'+d.createdProducts+'</b> mã hàng · Dùng lại <b>'+d.reusedProducts+'</b> mã hàng · Tạo <b>'+d.createdModules+'</b> cụm.</p>'
+      +'<p class="mb-3">Giữ nguyên '+d.duplicateLines+' dòng đã có; bỏ qua '+(d.conflicts+d.invalid)+' dòng xung đột/không hợp lệ. '+(s.versionId?'':'BOM nháp '+esc(s.versionNo)+' sẽ được tạo khi nhập.')+'</p>'
+      +'<div class="max-h-[420px] overflow-auto">'+machineBOMImportDetails(d.details)+'</div>';
+    openModal(modalShell({title:'Kết quả kiểm tra BOM',subtitle:s.fileName+' · '+s.sheets[s.index].name,icon:'fact_check',body,footer:btnSecondary('Quay lại','renderMachineBOMImportSetup()','arrow_back')+(d.imported?btnPrimary('Nhập '+d.imported+' dòng','importMachineBOMExcel()','upload'):'')}),1000);
+  }catch(e){ console.warn('[checkMachineBOMImport]', (e && e.message) || String(e)); toast(e.message,'error');}finally{MACHINE_BOM_IMPORT_BUSY=false;setSaving(false);}
+};
+V223_IMPL["importMachineBOMExcel__4422"] = async function(){
+  if(MACHINE_BOM_IMPORT_BUSY)return;
+  const s=MACHINE_BOM_IMPORT;if(!s||!s.preview)return;
+  MACHINE_BOM_IMPORT_BUSY=true;setSaving(true);
+  try{
+    const r=await gas('importMachineBOMLines',s.versionId,s.sheets[s.index].rows,{machineId:s.machineId,versionNo:s.versionNo,createMissingProducts:true});
+    if(!r||!r.success)throw new Error(r&&r.message||'Nhập BOM thất bại. Có thể thử lại, các dòng đã có sẽ được giữ nguyên.');
+    const d=r.data||{};invalidate('products','projects');closeModal();await openMachineBOM(s.machineId,d.BOMVersionID||s.versionId);
+    const body='<p class="mb-4">Đã thêm '+(d.imported||0)+' dòng; tạo '+(d.createdProducts||0)+' mã hàng và '+(d.createdModules||0)+' cụm; giữ nguyên '+(d.duplicateLines||0)+' dòng đã có.</p>'
+      +'<div class="max-h-[420px] overflow-auto">'+machineBOMImportDetails(d.details)+'</div>';
+    openModal(modalShell({title:'Kết quả nhập BOM',subtitle:s.fileName,icon:'task_alt',body,footer:btnPrimary('Đóng','closeModal()','check')}),1000);
+    MACHINE_BOM_IMPORT=null;
+  }catch(e){ console.warn('[importMachineBOMExcel]', (e && e.message) || String(e)); toast(e.message,'error');}finally{MACHINE_BOM_IMPORT_BUSY=false;setSaving(false);}
+};
+V223_IMPL["releaseMachineBOM__4456"] = async function(){
+  const d=MACHINE_BOM_CACHE||{},v=d.selectedVersion,m=d.machine||{};
+  const r=await gas('releaseMachineBOMVersion',v.BOMVersionID,{ECNNo:amcvnVal('mbrECN'),ECNNote:amcvnVal('mbrNote'),EffectiveDate:amcvnVal('mbrEffective')});
+  if(!r||!r.success)return toast(r&&r.message||'Không phát hành được BOM','error');
+  closeModal();toast(r.message);if(r.data&&r.data.materialSyncRequired&&canEdit('material_control')){const s=await gas('refreshMaterialRequirements',m.MachineID,{});if(s&&s.success)toast(s.message);else toast((s&&s.message)||'BOM đã phát hành nhưng chưa đồng bộ được Material Control','error');}
+  openMachineBOM(m.MachineID,v.BOMVersionID);
+};
+V223_IMPL["compareMachineBOMNow__4468"] = async function(){
+  const d=MACHINE_BOM_CACHE||{},v=d.selectedVersion,r=await gas('compareMachineBOMVersions',amcvnVal('mbcFrom'),v.BOMVersionID);
+  if(!r||!r.success)return toast(r&&r.message||'Không so sánh được BOM','error');const c=((r.data||{}).diff||{}).counts||{};
+  const el=$('#mbcResult');if(el)el.innerHTML='<div class="grid grid-cols-3 gap-3">'+kpiCard('Dòng thêm','+'+(c.added||0),'add','bg-emerald-50 text-emerald-600')+kpiCard('Dòng sửa','~'+(c.updated||0),'edit','bg-amber-50 text-amber-600')+kpiCard('Dòng xóa','-'+(c.deleted||0),'delete','bg-rose-50 text-rose-600')+'</div>';
+};
+V223_IMPL["renderAssemblyDashboardTab__4485"] = async function(){
+  const body=$('#tabBody');if(!body)return;body.innerHTML=loadingBlock();
+  const r=await gas('getAssemblyDashboard');
+  if(!r||!r.success){body.innerHTML=emptyState((r&&r.message)||'Không tải được Assembly Control');return;}
+  const d=r.data||{},k=d.summary||{},machines=d.machines||[],issues=d.issues||[];
+  const issueCount={};issues.forEach(x=>{issueCount[x.MachineID]=(issueCount[x.MachineID]||0)+1;});
+  const columns=[
+    {label:'Mã máy',key:'MachineCode'},{label:'Tên máy',key:'MachineName'},
+    {label:'Công đoạn',render:x=>badge(amcvnStatusLabel(x.CurrentStage))},
+    {label:'Tiến độ',render:x=>amcvnProgress(x.ProgressPercent)},
+    {label:'Assembly',render:x=>badge(amcvnStatusLabel(x.AssemblyStatus))},
+    {label:'Issue mở',right:true,render:x=>'<b class="'+(issueCount[x.MachineID]?'text-rose-600':'text-emerald-600')+'">'+fmtNum(issueCount[x.MachineID]||0)+'</b>'},
+    {label:'Owner',key:'Owner'},{label:'Lý do bị chặn',render:x=>esc(x.BlockedReason||'-')}
+  ];
+  body.innerHTML='<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-5">'
+    +kpiCard('Tổng số máy',k.totalMachines||0,'precision_manufacturing','bg-blue-50 text-blue-600')
+    +kpiCard('Đang thực hiện',k.inProgress||0,'engineering','bg-amber-50 text-amber-600')
+    +kpiCard('Bị chặn',k.blocked||0,'block','bg-rose-50 text-rose-600')
+    +kpiCard('Issue đang mở',k.openIssues||0,'report_problem','bg-violet-50 text-violet-600')+'</div>'
+    +card('<div class="p-4 border-b border-line"><b>Assembly Control theo máy</b><div class="text-[11px] text-muted mt-1">Chọn một máy để cập nhật công đoạn, phân công và issue.</div></div>'
+    +dataTable(columns,machines,{empty:'Chưa có máy để thực hiện sản xuất.',idKey:'MachineID',onRowClick:'openStageTree'}));
+};
+V223_IMPL["openMachineExecution__4507"] = async function(machineId){
+  const p=$('#page');p.innerHTML=loadingBlock();p.dataset.module='machine-execution';
+  const r=await gas('getMachineExecution',machineId);
+  if(!r||!r.success){p.innerHTML=emptyState((r&&r.message)||'Không tải được thực thi máy');return;}
+  const d=r.data||{},m=d.machine||{},project=d.project||{},mods=d.modules||[],stages=d.stages||[],assignments=d.assignments||[],issues=d.issues||[],s=d.summary||{};
+  MACHINE_EXECUTION_CACHE=d;
+  const moduleMap={};mods.forEach(x=>moduleMap[x.ModuleID]=x.ModuleCode+' — '+x.ModuleName);
+  const actions=(canEdit('production')?btnSecondary('Cập nhật công đoạn','openMachineStageForm('+jsArg(machineId)+')','timeline'):'')
+    + btnSecondary('Cây công đoạn','openStageTree('+jsArg(machineId)+')','account_tree')   // ← THÊM DÒNG NÀY
+    +(canAdd('production')?btnSecondary('Thêm phân công','openMachineAssignmentForm('+jsArg(machineId)+')','person_add'):'')
+    +(canAdd('production')?btnPrimary('Tạo issue','openMachineIssueForm('+jsArg(machineId)+')','report_problem'):'');
+  const stageCols=[
+    {label:'Công đoạn',render:x=>badge(amcvnStatusLabel(x.Stage))},{label:'Trạng thái',render:x=>badge(amcvnStatusLabel(x.Status))},
+    {label:'Tiến độ',render:x=>amcvnProgress(x.ProgressPercent)},{label:'Owner',key:'Owner'},
+    {label:'Nhân lực',right:true,render:x=>fmtNum(x.Manpower||0)},{label:'Kế hoạch',render:x=>(fmtDate(x.PlanStart)||'-')+' → '+(fmtDate(x.PlanFinish)||'-')},
+    {label:'Thực tế',render:x=>(fmtDate(x.ActualStart)||'-')+' → '+(fmtDate(x.ActualFinish)||'-')},
+    {label:'Ghi chú / Blocked',render:x=>'<div class="max-w-[240px]">'+esc(x.BlockedReason||x.Note||'-')+'</div>'}
+  ];
+  const assignmentCols=[
+    {label:'Nhân sự',render:x=>'<b>'+esc(x.EmployeeName)+'</b><div class="text-[11px] text-muted">'+esc(x.Role||'')+'</div>'},
+    {label:'Module',render:x=>esc(moduleMap[x.ModuleID]||'Toàn máy')},{label:'Công đoạn',render:x=>esc(amcvnStatusLabel(x.Stage))},
+    {label:'Phân bổ',right:true,render:x=>'<b>'+fmtNum(x.AllocationPercent||0)+'%</b>'},
+    {label:'Thời gian',render:x=>(fmtDate(x.StartDate)||'-')+' → '+(fmtDate(x.EndDate)||'-')},{label:'Trạng thái',render:x=>badge(amcvnStatusLabel(x.Status))},
+    {label:'',render:x=>(canEdit('production')?'<button onclick="event.stopPropagation();openMachineAssignmentForm('+esc(jsArg(machineId))+','+esc(jsArg(x.AssignmentID))+')" class="text-brand-600 mr-2"><span class="ms">edit</span></button>':'')+(canDelete('production')?'<button onclick="event.stopPropagation();confirmExecutionDelete(\'assignment\','+esc(jsArg(x.AssignmentID))+','+esc(jsArg(machineId))+')" class="text-rose-600"><span class="ms">delete</span></button>':'')}
+  ];
+  const issueCols=[
+    {label:'Issue',render:x=>'<b class="text-brand-600">'+esc(x.IssueID)+'</b><div class="text-[11px] text-muted">'+esc(x.IssueType||'')+'</div>'},
+    {label:'Mức độ',render:x=>assemblySeverityBadge(x.Severity)},{label:'Module',render:x=>esc(moduleMap[x.ModuleID]||'Toàn máy')},
+    {label:'Mô tả',render:x=>'<div class="max-w-[280px]"><b>'+esc(x.Description)+'</b><div class="text-[11px] text-muted">'+esc(x.Action||'')+'</div></div>'},
+    {label:'Owner',key:'Owner'},{label:'Hạn',render:x=>fmtDate(x.DueDate)||'-'},{label:'Blocked',render:x=>assemblyBool(x.Blocked)?badge('BLOCKED'):badge('-')},
+    {label:'Trạng thái',render:x=>badge(amcvnStatusLabel(x.Status))},
+    {label:'',render:x=>(canEdit('production')?'<button onclick="event.stopPropagation();openMachineIssueForm('+esc(jsArg(machineId))+','+esc(jsArg(x.IssueID))+')" class="text-brand-600 mr-2"><span class="ms">edit</span></button>':'')+(canDelete('production')?'<button onclick="event.stopPropagation();confirmExecutionDelete(\'issue\','+esc(jsArg(x.IssueID))+','+esc(jsArg(machineId))+')" class="text-rose-600"><span class="ms">delete</span></button>':'')}
+  ];
+  const head='<button onclick="go(\'production\',\'assembly\')" class="text-[13px] text-brand-600 font-semibold inline-flex items-center gap-1 mb-4"><span class="ms">arrow_back</span>Assembly Control</button>'
+    +pageHeader(m.MachineCode+' — Assembly Execution',(project.ProjectCode||'')+' · '+(m.MachineName||'')+' · '+amcvnStatusLabel(m.CurrentStage),actions);
+  const kpis='<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-5">'
+    +kpiCard('Tiến độ máy',Math.round(Number(m.ProgressPercent)||0)+'%','speed','bg-brand-50 text-brand-600')
+    +kpiCard('Phân công active',s.activeAssignments||0,'groups','bg-blue-50 text-blue-600')
+    +kpiCard('Nhân lực quy đổi',Number(s.manpower||0).toFixed(1)+' FTE','engineering','bg-violet-50 text-violet-600')
+    +kpiCard('Issue mở',s.openIssues||0,'report_problem',(s.blockedIssues||s.criticalIssues)?'bg-rose-50 text-rose-600':'bg-emerald-50 text-emerald-600')+'</div>';
+  const blocked=m.BlockedReason?'<div class="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700"><b>Máy đang bị chặn:</b> '+esc(m.BlockedReason)+'</div>':'';
+  p.innerHTML=head+kpis+blocked
+    +card('<div class="p-4 border-b border-line"><b>Nhật ký công đoạn</b></div>'+dataTable(stageCols,stages,{empty:'Chưa có cập nhật công đoạn.'}),'mb-5')
+    +card('<div class="p-4 border-b border-line"><b>Phân công thực hiện</b></div>'+dataTable(assignmentCols,assignments,{empty:'Chưa có phân công.'}),'mb-5')
+    +card('<div class="p-4 border-b border-line"><b>Issue sản xuất</b></div>'+dataTable(issueCols,issues,{empty:'Chưa có issue.'}));
+};
+V223_IMPL["saveMachineStage__4567"] = async function(machineId){
+  const data={MachineID:machineId,Stage:amcvnVal('asStage'),ProgressPercent:amcvnVal('asProgress'),Status:amcvnVal('asStatus'),Owner:amcvnVal('asOwner'),Manpower:amcvnVal('asManpower'),PlanStart:amcvnVal('asPlanStart'),PlanFinish:amcvnVal('asPlanFinish'),ActualStart:amcvnVal('asActualStart'),ActualFinish:amcvnVal('asActualFinish'),BlockedReason:amcvnVal('asBlocked'),Note:amcvnVal('asNote')};
+  const r=await gas('updateMachineStage',data);if(!r||!r.success){toast(r&&r.message||'Không cập nhật được công đoạn','error');return;}
+  toast(r.message);closeModal();delete STATE.cache.projects;openMachineExecution(machineId);
+};
+V223_IMPL["openMachineAssignmentForm__4572"] = async function(machineId,id){
+  const d=MACHINE_EXECUTION_CACHE||{},m=d.machine||{},x=(d.assignments||[]).find(v=>String(v.AssignmentID)===String(id))||{},o=await phase1Options();
+  const body=row2(field('Nhân sự *',sel('aaEmployee',p1EmployeeOptions(o,true),x.EmployeeID||'')),field('Vai trò *',sel('aaRole',['Leader'].concat(ASSEMBLY_ROLES),x.Role||'Assembler')))
+    +row2(field('Module',sel('aaModule',assemblyModuleOptions(),x.ModuleID||'')),field('Công đoạn',sel('aaStage',AMCVN_STAGE_OPTIONS,x.Stage||m.CurrentStage||'PLANNING')))
+    +row3(field('Bắt đầu',inp('aaStart','','date',amcvnDateValue(x.StartDate))),field('Kết thúc',inp('aaEnd','','date',amcvnDateValue(x.EndDate))),field('Phân bổ (%)',inp('aaAllocation','1-100','number',x.AllocationPercent||100)))
+    +row2(field('Trạng thái',sel('aaStatus',ASSEMBLY_ASSIGNMENT_STATUS,x.Status||'ACTIVE')),field('Mã nhân sự',inp('aaEmployeeId','Không bắt buộc','text',x.EmployeeID)))+field('Ghi chú',txt('aaNotes','Phạm vi công việc',x.Notes));
+  const footer=btnSecondary('Hủy','closeModal()','close')+btnPrimary(id?'Lưu thay đổi':'Thêm phân công','saveMachineAssignment('+jsArg(machineId)+','+jsArg(id||'')+')','save');
+  openModal(modalShell({title:id?'Cập nhật phân công':'Thêm phân công',subtitle:m.MachineCode||'',icon:'person_add',body,footer}),720);
+};
+V223_IMPL["saveMachineAssignment__4581"] = async function(machineId,id){
+  const o=PHASE1_OPTIONS||{},emp=(o.employees||[]).find(x=>x.EmployeeID===amcvnVal('aaEmployee'))||{};if(!emp.EmployeeID)return toast('Chọn nhân viên từ danh sách HR','error');const data={MachineID:machineId,EmployeeName:emp.FullName||'',EmployeeID:emp.EmployeeID||'',Role:amcvnVal('aaRole'),ModuleID:amcvnVal('aaModule'),Stage:amcvnVal('aaStage'),StartDate:amcvnVal('aaStart'),EndDate:amcvnVal('aaEnd'),AllocationPercent:amcvnVal('aaAllocation'),Status:amcvnVal('aaStatus'),Notes:amcvnVal('aaNotes')};
+  const r=id?await gas('updateMachineAssignment',id,data):await gas('createMachineAssignment',data);if(!r||!r.success){toast(r&&r.message||'Không lưu được phân công','error');return;}
+  toast(r.message);closeModal();openMachineExecution(machineId);
+};
+V223_IMPL["saveMachineIssue__4596"] = async function(machineId,id){
+  const data={MachineID:machineId,IssueType:amcvnVal('aiType'),Severity:amcvnVal('aiSeverity'),Status:amcvnVal('aiStatus'),ModuleID:amcvnVal('aiModule'),Stage:amcvnVal('aiStage'),Description:amcvnVal('aiDescription'),Owner:amcvnVal('aiOwner'),DueDate:amcvnVal('aiDue'),Blocked:amcvnVal('aiBlocked')==='true',Action:amcvnVal('aiAction')};
+  const r=id?await gas('updateMachineIssue',id,data):await gas('createMachineIssue',data);if(!r||!r.success){toast(r&&r.message||'Không lưu được issue','error');return;}
+  toast(r.message);closeModal();delete STATE.cache.projects;openMachineExecution(machineId);
+};
+V223_IMPL["openMachineQuality__4658"] = async function(machineId){
+  const p=$('#page');p.innerHTML=loadingBlock();p.dataset.module='machine-quality';
+  const r=await gas('getMachineQualityFAT',machineId);if(!r||!r.success){p.innerHTML=emptyState(r&&r.message||'Không tải được Quality & FAT của máy');return;}
+  const d=r.data||{},m=d.machine||{},project=d.project||{},mods=d.modules||[],issues=d.issues||[],checks=d.checks||[],punches=d.punches||[],g=d.readiness||{};QUALITY_FAT_CACHE=d;
+  const moduleMap={};mods.forEach(x=>moduleMap[x.ModuleID]=x.ModuleCode+' — '+x.ModuleName);
+  const actions=(canAdd('quality')?btnSecondary('Áp dụng mẫu FAT','openApplyFATTemplate('+jsArg(machineId)+')','playlist_add_check'):'')
+    +(canEdit('quality')?btnSecondary('Phê duyệt FAT','openFATApproval('+jsArg(machineId)+')','approval'):'')
+    +(canAdd('quality')?btnSecondary('Thêm Quality Issue','openQualityIssueForm('+jsArg(machineId)+')','gpp_bad'):'')
+    +(canAdd('quality')?btnSecondary('Thêm FAT Check','openFATCheckForm('+jsArg(machineId)+')','checklist'):'')
+    +(canAdd('quality')?btnPrimary('Thêm Punch','openFATPunchForm('+jsArg(machineId)+')','add_task'):'');
+  const issueCols=[{label:'Mã',key:'QualityIssueID'},{label:'Mức độ',render:x=>assemblySeverityBadge(x.Severity)},{label:'Module',render:x=>esc(moduleMap[x.ModuleID]||'Toàn máy')},{label:'Mô tả',render:x=>'<b>'+esc(x.Description)+'</b><div class="text-[11px] text-muted">'+esc(x.CorrectiveAction||x.Containment||'')+'</div>'},{label:'Owner',key:'Owner'},{label:'Hạn',render:x=>fmtDate(x.DueDate)||'-'},{label:'Trạng thái',render:x=>badge(amcvnStatusLabel(x.Status))},{label:'',render:x=>(canEdit('quality')?'<button onclick="event.stopPropagation();openQualityIssueForm('+esc(jsArg(machineId))+','+esc(jsArg(x.QualityIssueID))+')" class="text-brand-600 mr-2"><span class="ms">edit</span></button>':'')+(canDelete('quality')?'<button onclick="event.stopPropagation();confirmQualityDelete(\'issue\','+esc(jsArg(x.QualityIssueID))+','+esc(jsArg(machineId))+')" class="text-rose-600"><span class="ms">delete</span></button>':'')}];
+  const fatCols=[{label:'Hạng mục',key:'Category'},{label:'Nội dung',render:x=>'<b>'+esc(x.CheckItem)+'</b><div class="text-[11px] text-muted">'+esc(x.AcceptanceCriteria||'')+'</div>'},{label:'Kết quả',render:x=>badge(amcvnStatusLabel(x.Result))},{label:'Người kiểm',key:'CheckedBy'},{label:'Thời điểm',render:x=>fmtDate(x.CheckedAt)||'-'},{label:'Ghi chú',key:'Remark'},{label:'',render:x=>(canEdit('quality')?'<button onclick="event.stopPropagation();openFATCheckForm('+esc(jsArg(machineId))+','+esc(jsArg(x.FATCheckID))+')" class="text-brand-600 mr-2"><span class="ms">edit</span></button>':'')+(canDelete('quality')?'<button onclick="event.stopPropagation();confirmQualityDelete(\'fat\','+esc(jsArg(x.FATCheckID))+','+esc(jsArg(machineId))+')" class="text-rose-600"><span class="ms">delete</span></button>':'')}];
+  const punchCols=[{label:'Mã',key:'PunchID'},{label:'Mức độ',render:x=>assemblySeverityBadge(x.Severity)},{label:'Mô tả',render:x=>'<b>'+esc(x.Description)+'</b><div class="text-[11px] text-muted">'+esc(x.Action||'')+'</div>'},{label:'Owner',key:'Owner'},{label:'Mục tiêu',render:x=>fmtDate(x.TargetDate)||'-'},{label:'Trạng thái',render:x=>badge(amcvnStatusLabel(x.Status))},{label:'',render:x=>(canEdit('quality')?'<button onclick="event.stopPropagation();openFATPunchForm('+esc(jsArg(machineId))+','+esc(jsArg(x.PunchID))+')" class="text-brand-600 mr-2"><span class="ms">edit</span></button>':'')+(canDelete('quality')?'<button onclick="event.stopPropagation();confirmQualityDelete(\'punch\','+esc(jsArg(x.PunchID))+','+esc(jsArg(machineId))+')" class="text-rose-600"><span class="ms">delete</span></button>':'')}];
+  const reasons=(!g.ready&&g.reasons&&g.reasons.length)?'<div class="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700"><b>Chưa đủ điều kiện Ready to Ship:</b> '+esc(g.reasons.join('; '))+'</div>':'<div class="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-[13px] text-emerald-700"><b>Quality Gate đạt:</b> máy đủ điều kiện chuyển Ready to Ship.</div>';
+  p.innerHTML='<button onclick="go(\'quality\')" class="text-[13px] text-brand-600 font-semibold inline-flex items-center gap-1 mb-4"><span class="ms">arrow_back</span>Quality & FAT</button>'
+    +pageHeader((m.MachineCode||machineId)+' — Quality & FAT',(project.ProjectCode||'')+' · '+(m.MachineName||''),actions)
+    +'<div class="grid grid-cols-2 xl:grid-cols-5 gap-3 mb-5">'+kpiCard('Quality',amcvnStatusLabel(g.qualityStatus),'verified','bg-blue-50 text-blue-600')+kpiCard('FAT',amcvnStatusLabel(g.fatStatus),'fact_check','bg-violet-50 text-violet-600')+kpiCard('FAT đạt',(g.passedChecks||0)+' / '+(g.totalChecks||0),'check_circle','bg-emerald-50 text-emerald-600')+kpiCard('Issue chặn',g.blockingIssues||0,'gpp_bad','bg-rose-50 text-rose-600')+kpiCard('Punch mở',g.openPunches||0,'format_list_bulleted','bg-amber-50 text-amber-600')+'</div>'+reasons
+    +card('<div class="p-4 border-b border-line"><b>Quality Issues</b></div>'+dataTable(issueCols,issues,{empty:'Chưa có vấn đề chất lượng.'}),'mb-5')
+    +card('<div class="p-4 border-b border-line"><b>FAT Checklist</b></div>'+dataTable(fatCols,checks,{empty:'Chưa có mục FAT. Máy chưa thể đạt Ready to Ship.'}),'mb-5')
+    +card('<div class="p-4 border-b border-line"><b>FAT Punch List</b></div>'+dataTable(punchCols,punches,{empty:'Không có punch list.'}));
+};
+V223_IMPL["openMachineMaterials__4741"] = async function(machineId){
+  const p=$('#page');p.innerHTML=loadingBlock();p.dataset.module='machine-materials';
+  const rs=await Promise.all([gas('getMachineDetail',machineId),gas('getMaterialRequirements',machineId,{includeECN:true})]);
+  if(!rs[0]||!rs[0].success||!rs[1]||!rs[1].success){p.innerHTML=emptyState((rs[0]&&rs[0].message)||(rs[1]&&rs[1].message)||'Không tải được vật tư');return;}
+  const d=rs[0].data,m=d.machine,project=d.project||{},ctb=d.ctb||{},rows=rs[1].data||[];
+  const actions=(canEdit('material_control')?btnSecondary('Đồng bộ từ BOM','refreshMachineMaterials('+jsArg(machineId)+')','sync'):'')
+    +(canAdd('material_control')?btnSecondary('Tạo exception','openMaterialExceptionForm('+jsArg(machineId)+')','warning'):'')
+    +(canAdd('material_control')?btnPrimary('Thêm vật tư','openMaterialRequirementForm('+jsArg(machineId)+')','add'):'');
+  const head='<button onclick="openMachineDetail('+esc(jsArg(machineId))+')" class="text-[13px] text-brand-600 font-semibold inline-flex items-center gap-1 mb-4"><span class="ms">arrow_back</span>'+esc(m.MachineCode||'Máy')+'</button>'
+    +pageHeader('Material CTB — '+m.MachineCode,(project.ProjectCode||'')+' · BOM: '+(m.ProductID||'Chưa gắn thành phẩm'),actions);
+  const kpis='<div class="grid grid-cols-2 xl:grid-cols-5 gap-3 mb-5">'
+    +kpiCard('CTB',Math.round(Number(ctb.percent)||0)+'%','speed',ctb.status==='BLOCKED'?'bg-rose-50 text-rose-600':'bg-emerald-50 text-emerald-600')
+    +kpiCard('Trạng thái',esc(amcvnStatusLabel(ctb.status)),'flag','bg-brand-50 text-brand-600')
+    +kpiCard('Ready lines',(ctb.readyLines||0)+' / '+(ctb.totalLines||0),'check_circle','bg-emerald-50 text-emerald-600')
+    +kpiCard('Shortage lines',ctb.shortageLines||0,'warning','bg-amber-50 text-amber-600')
+    +kpiCard('Critical A',ctb.criticalShortage||0,'report','bg-rose-50 text-rose-600')+'</div>';
+  const cols=[{label:'Critical',render:x=>materialCriticalBadge(x.CriticalLevel)},{label:'SKU',key:'SKU'},{label:'Mã hàng',key:'PartNumber'},{label:'Vật tư',key:'ProductName'},{label:'Cụm',render:x=>esc(x.ModuleCode||'')+'<div>'+esc(x.ModuleName||'')+'</div>'},{label:'Quản lý',render:x=>stockModeBadge(x.InventoryMode)},{label:'Cần',right:true,key:'RequiredQty'},{label:'Tồn',right:true,key:'AvailableStock'},{label:'Đã cấp',right:true,key:'AllocatedQty'},{label:'Thiếu',right:true,render:x=>'<b class="'+(Number(x.ShortageQty)>0?'text-rose-600':'text-emerald-600')+'">'+fmtNum(x.ShortageQty||0)+'</b>'},{label:'Ngày cần',render:x=>fmtDate(x.RequiredDate)||'-'},{label:'Owner',key:'Owner'},{label:'Status',render:x=>badge(amcvnStatusLabel(x.MaterialStatus))}];
+  p.innerHTML=head+kpis+card(procTable(cols,rows,{empty:'Chưa có nhu cầu vật tư. Hãy gắn thành phẩm cho máy và đồng bộ từ BOM.',idKey:'RequirementID',onRowClick:'openMaterialRequirement'}));
+};
+V223_IMPL["refreshMachineMaterials__4760"] = async function(machineId){
+  const r=await gas('refreshMaterialRequirements',machineId,{});if(!r||!r.success){toast(r&&r.message||'Không đồng bộ được BOM','error');return;}
+  toast(r.message);MATERIAL_DASH_CACHE=null;delete STATE.cache.projects;openMachineMaterials(machineId);
+};
+V223_IMPL["loadProductionPricing__10844"] = async function(id){
+  const box=$('#prodPricingBox'); if(!box) return;
+  const r=await gas('getProductionPricingBundle',id);
+  if(!box.isConnected) return;
+  if(!r||!r.success){ box.innerHTML='<div class="text-[12px] text-rose-600">'+esc((r&&r.message)||'Không tải được giá bán/giá gốc')+'</div>'; return; }
+  PROD_PRICING={id:id,pricing:r.data.pricing,lines:(r.data.costLines||[]).map(l=>Object.assign({},l)),profit:r.data.profit};
+  renderProductionPricing();
+};
+V223_IMPL["saveProductionPricingAll__10923"] = async function(){
+  const id=PROD_PRICING.id; if(!id) return;
+  if(SAVING)return; setSaving(true);
+  toast('Đang tính lại...','info');
+  try{
+    if(PROD_PRICING.pricing){
+      const r=await gas('saveProductionPricing',id,{Weight:pnum(($('#ppWeight')||{}).value),Quantity:pnum(($('#ppQty')||{}).value),UnitPrice:moneyVal('ppPrice')});
+      if(!r||!r.success){ setSaving(false); return toast((r&&r.message)||'Không lưu được giá bán','error'); }
+    }
+    if(PROD_PRICING.lines.length){
+      const r2=await gas('saveProductionCostLines',id,PROD_PRICING.lines.map(l=>({
+        CostName:l.CostName,CostGroup:l.CostGroup,CalculationType:l.CalculationType,Weight:pnum(l.Weight),Quantity:pnum(l.Quantity),
+        UnitPrice:pnum(l.UnitPrice),Percent:pnum(l.Percent),Formula:l.Formula,Amount:pnum(l.Amount),
+        IsStockDeduct:pricingBoolUI(l.IsStockDeduct),ProductID:l.MaterialProductID||'',Notes:l.Notes||''})));
+      if(!r2||!r2.success){ setSaving(false); return toast((r2&&r2.message)||'Không lưu được giá gốc','error'); }
+    }
+    setSaving(false);
+    toast('Đã tính lại giá bán, giá gốc và giá thành/SP');
+    await loadProductionPricing(id);
+    await reprime('production','products','movements');
+  }catch(e){ console.warn('[saveProductionPricingAll]', (e && e.message) || String(e));  setSaving(false); toast('Lỗi: '+e.message,'error'); }
+};
+V223_IMPL["openStageTree__19013"] = async function(machineId) {
+  STATE.route = 'production';
+  STATE.tab.production = 'assembly';
+  setActiveNav();
+  if (typeof syncMobileNav === 'function') syncMobileNav();
+
+  var p = $('#page');
+  p.innerHTML = loadingBlock();
+  p.dataset.module = 'stage-tree';
+
+  var r = await gas('getProductionStages', machineId);
+  if (!r || !r.success) {
+    p.innerHTML = emptyState((r && r.message) || 'Không tải được cây công đoạn');
+    return;
+  }
+
+  STAGE_TREE_STATE.data = r.data;
+  STAGE_TREE_STATE.collapsed = {};
+  renderStageTree();
+    // Tự động refresh badge chat mỗi 45s khi đang ở màn hình cây
+  if (window._stageChatBadgeTimer) clearInterval(window._stageChatBadgeTimer);
+  window._stageChatBadgeTimer = setInterval(function () {
+    if (STAGE_TREE_STATE.data) chatRefreshBadge(STAGE_TREE_STATE.data.machine.MachineID);
+  }, 45000);
+};
+V223_IMPL["stageSaveGroup__19314"] = async function(groupCode) {
+  var d = STAGE_TREE_STATE.data;
+  if (!d) return;
+  var machineId = d.machine.MachineID;
+
+  var cards = document.querySelectorAll('#modalBox [data-stage-id]');
+  var updates = [];
+  cards.forEach(function (card) {
+    var stageId = card.getAttribute('data-stage-id');
+    var targetDate = (card.querySelector('[data-field="targetDate"]') || {}).value || '';
+    var progressPercent = Number((card.querySelector('[data-field="progressPercent"]') || {}).value || 0);
+    var notes = (card.querySelector('[data-field="notes"]') || {}).value || '';
+    updates.push({ stageId: stageId, targetDate: targetDate, progressPercent: progressPercent, notes: notes });
+  });
+
+  if (!updates.length) return toast('Không có dòng nào để cập nhật', 'error');
+
+  if (SAVING) return;
+  setSaving(true);
+  try {
+    var r = await gas('updateStageGroupProgress', machineId, groupCode, { updates: updates });
+    if (!r || !r.success) return toast(r && r.message || 'Lỗi lưu', 'error');
+    toast(r.message);
+    closeModal();
+    // Refresh lại
+    await openStageTree(machineId);
+  } finally {
+    setSaving(false);
+  }
+};
+V223_IMPL["stageSaveSingle__19410"] = async function(stageId) {
+  var d = STAGE_TREE_STATE.data;
+  if (!d) return;
+  var targetDate = (document.getElementById('singleTargetDate') || {}).value || '';
+  var progressPercent = Number((document.getElementById('singleProgress') || {}).value || 0);
+  var notes = (document.getElementById('singleNotes') || {}).value || '';
+
+  if (SAVING) return;
+  setSaving(true);
+  try {
+    var r = await gas('updateStageProgress', stageId, {
+      TargetDate: targetDate,
+      ProgressPercent: progressPercent,
+      Notes: notes
+    });
+    if (!r || !r.success) return toast(r && r.message || 'Lỗi lưu', 'error');
+    toast(r.message);
+    closeModal();
+    await openStageTree(d.machine.MachineID);
+  } finally {
+    setSaving(false);
+  }
+};
+V223_IMPL["openStageConfigModal__19437"] = async function() {
+  var r = await gas('getProductionStageConfig');
+  if (!r || !r.success) return toast(r && r.message || 'Không tải được cấu hình', 'error');
+  var cfg = r.data;
+
+  var elecList = cfg.elecStages || [];
+
+  var body = '<div class="space-y-3">'
+    + '<div class="rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[12.5px] px-4 py-2.5 flex gap-2">'
+    +   '<span class="ms text-[18px] shrink-0">info</span>'
+    +   '<div>Đổi cấu hình này sẽ áp dụng cho các máy <b>chưa có</b> công đoạn điện. Máy đã có công đoạn sẽ giữ nguyên tiến độ cũ.</div>'
+    + '</div>'
+
+    + '<div class="text-[13px] font-semibold text-ink">Các bước trong Electrical Assembly</div>'
+
+    + '<div id="elecStageList" class="space-y-2">'
+    + elecList.map(function (st, i) {
+        return '<div class="flex items-center gap-2" data-idx="' + i + '">'
+          + '<span class="w-7 h-7 rounded-lg bg-bg border border-line flex items-center justify-center text-[11px] font-bold text-muted shrink-0">' + (i + 1) + '</span>'
+          + '<input type="text" data-field="label" value="' + stageEscAttr(st.label) + '" placeholder="Tên công đoạn (VD: Pre-Wire)" class="flex-1 px-2 py-1.5 rounded-lg border border-stroke text-[13px]"/>'
+          + '<input type="text" data-field="code" value="' + stageEscAttr(st.code) + '" placeholder="Mã (VD: PRE_WIRE)" class="w-36 px-2 py-1.5 rounded-lg border border-stroke text-[12px] font-mono"/>'
+          + '<button type="button" onclick="stageRemoveElecRow(this)" class="w-8 h-8 rounded-lg hover:bg-rose-50 text-rose-500 shrink-0"><span class="ms text-[18px]">close</span></button>'
+          + '</div>';
+      }).join('')
+    + '</div>'
+
+    + '<button type="button" onclick="stageAddElecRow()" class="w-full px-3 py-2 rounded-xl border border-dashed border-brand-300 text-brand-600 text-[12.5px] font-semibold hover:bg-brand-50 inline-flex items-center justify-center gap-1">'
+    +   '<span class="ms text-[18px]">add</span>Thêm bước'
+    + '</button>'
+    + '</div>';
+
+  openModal(modalShell({
+    title: 'Cấu hình công đoạn điện',
+    subtitle: 'Áp dụng cho máy chưa có công đoạn',
+    icon: 'settings',
+    body: body,
+    footer: btnSecondary('Hủy', 'closeModal()', 'close')
+      + btnPrimary('Lưu cấu hình', 'stageSaveConfig()', 'save')
+  }), 620);
+};
+V223_IMPL["stageSaveConfig__19509"] = async function() {
+  var list = document.getElementById('elecStageList');
+  if (!list) return;
+  var rows = list.querySelectorAll('[data-idx]');
+  var elecStages = [];
+  var error = '';
+  rows.forEach(function (r) {
+    var label = String((r.querySelector('[data-field="label"]') || {}).value || '').trim();
+    var code = String((r.querySelector('[data-field="code"]') || {}).value || '').trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+    if (!label || !code) { error = 'Có dòng trống tên hoặc mã'; return; }
+    elecStages.push({ code: code, label: label });
+  });
+  if (error) return toast(error, 'error');
+  if (!elecStages.length) return toast('Cần ít nhất 1 công đoạn', 'error');
+
+  if (SAVING) return;
+  setSaving(true);
+  try {
+    var r = await gas('saveProductionStageConfig', { elecStages: elecStages });
+    if (!r || !r.success) return toast(r && r.message || 'Lỗi lưu', 'error');
+    toast(r.message);
+    closeModal();
+    // Refresh nếu đang xem cây của 1 máy
+    if (STAGE_TREE_STATE.data) {
+      await openStageTree(STAGE_TREE_STATE.data.machine.MachineID);
+    }
+  } finally {
+    setSaving(false);
+  }
+};
+V223_IMPL["openChatPanel__19573"] = async function(machineId) {
+  if (!machineId) return toast('Thiếu mã máy', 'error');
+  CHAT.machineId = machineId;
+  CHAT.rows = [];
+  CHAT.hasMore = true;
+  CHAT.loading = false;
+  CHAT.attachedImages = [];
+
+  var panel = document.getElementById('chatPanel');
+  var backdrop = document.getElementById('chatBackdrop');
+  if (!panel) {
+    // Tạo panel nếu chưa có
+    panel = document.createElement('div');
+    panel.id = 'chatPanel';
+    document.body.appendChild(panel);
+  }
+  if (!backdrop) {
+    backdrop = document.createElement('div');
+    backdrop.id = 'chatBackdrop';
+    backdrop.onclick = closeChatPanel;
+    document.body.appendChild(backdrop);
+  }
+
+  // Render skeleton
+  panel.innerHTML = chatSkeletonHtml();
+  document.body.classList.add('chat-open');
+  requestAnimationFrame(function () {
+    panel.classList.add('open');
+    backdrop.classList.add('open');
+  });
+
+  // Bind ESC
+  if (!CHAT._escBound) {
+    CHAT._escBound = true;
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && document.getElementById('chatPanel').classList.contains('open')) {
+        closeChatPanel();
+      }
+    });
+  }
+
+  // Load tin nhắn
+  await chatLoadInitial();
+};
+V223_IMPL["chatLoadInitial__19654"] = async function() {
+  var r = await gas('getDailyReports', CHAT.machineId, { limit: 30 });
+  if (!r || !r.success) {
+    var scroll = document.getElementById('chatScroll');
+    if (scroll) scroll.innerHTML = '<div class="px-4 py-8 text-center text-rose-600 text-[13px]">' + esc(r && r.message || 'Lỗi tải') + '</div>';
+    return;
+  }
+  CHAT.rows = r.data.rows || [];
+  CHAT.hasMore = !!r.data.hasMore;
+  CHAT.machineCode = r.data.machineCode || '';
+
+  // Update header
+  chatUpdateHeader();
+
+  // Render
+  chatRenderMessages();
+
+  // Bind scroll
+  chatBindScroll();
+
+  // Mark read
+  gas('markChatRead', CHAT.machineId).then(function () {
+    // Sau khi mark read, xoá badge unread trên header nếu có
+    chatRefreshBadge(CHAT.machineId);
+  });
+
+  // Focus ô nhập
+  setTimeout(function () {
+    var inp = document.getElementById('chatInput');
+    if (inp) inp.focus();
+  }, 200);
+};
+V223_IMPL["chatSendQuick__19851"] = async function() {
+  var inp = document.getElementById('chatInput');
+  if (!inp) return;
+  var content = String(inp.value || '').trim();
+  if (!content && !CHAT.attachedImages.length) return;
+
+  await chatSend({
+    Content: content,
+    ReportType: 'CHAT',
+    Severity: 'INFO',
+    Images: CHAT.attachedImages.filter(function (x) { return !x.uploading; })
+  });
+  inp.value = '';
+  inp.style.height = 'auto';
+};
+V223_IMPL["chatSend__19867"] = async function(data) {
+  if (CHAT.posting) return;
+  CHAT.posting = true;
+  try {
+    var r = await gas('postDailyReport', Object.assign({ MachineID: CHAT.machineId }, data));
+    if (!r || !r.success) {
+      toast(r && r.message || 'Lỗi gửi tin', 'error');
+      return false;
+    }
+    // Thêm vào đầu danh sách
+    CHAT.rows.unshift(r.data.row);
+    CHAT.attachedImages = [];
+    chatRenderMessages();
+    chatUpdateHeader();
+    return true;
+  } finally {
+    CHAT.posting = false;
+  }
+};
+V223_IMPL["chatPickImages__19888"] = async function(input) {
+  if (!input.files || !input.files.length) return;
+  var files = Array.from(input.files);
+  var remaining = 5 - CHAT.attachedImages.filter(function (x) { return !x.uploading; }).length;
+  if (remaining <= 0) {
+    toast('Đã đủ 5 ảnh', 'error');
+    input.value = '';
+    return;
+  }
+  files = files.slice(0, remaining);
+
+  for (var i = 0; i < files.length; i++) {
+    var file = files[i];
+    if (file.size > 10 * 1024 * 1024) {
+      toast('Ảnh "' + file.name + '" vượt 10 MB', 'error');
+      continue;
+    }
+    var tempIdx = CHAT.attachedImages.length;
+    CHAT.attachedImages.push({ url: '', id: '', uploading: true, name: file.name });
+    chatRenderComposer();
+    // Nén + upload
+    var dataUrl = await chatFileToDataUrl(file);
+    var compressed = await chatCompressImage(dataUrl, 1200, 0.78);
+    var upRes = await gas('uploadChatImage', compressed, CHAT.machineCode);
+    if (upRes && upRes.success) {
+      CHAT.attachedImages[tempIdx] = { url: upRes.data.url, id: upRes.data.id, uploading: false, name: file.name };
+    } else {
+      CHAT.attachedImages.splice(tempIdx, 1);
+      toast('Không upload được ảnh: ' + ((upRes && upRes.message) || ''), 'error');
+    }
+    chatRenderComposer();
+  }
+  input.value = '';
+};
+V223_IMPL["chatLoadMore__19977"] = async function() {
+  if (CHAT.loading || !CHAT.hasMore) return;
+  CHAT.loading = true;
+  var oldestMs = CHAT.rows.length ? CHAT.rows[CHAT.rows.length - 1].CreatedMs : 0;
+  var scroll = document.getElementById('chatScroll');
+  var prevHeight = scroll ? scroll.scrollHeight : 0;
+
+  var r = await gas('getDailyReports', CHAT.machineId, { limit: 30, beforeMs: oldestMs });
+  CHAT.loading = false;
+
+  if (!r || !r.success) return;
+  var newRows = r.data.rows || [];
+  if (!newRows.length) {
+    CHAT.hasMore = false;
+    var lm = document.getElementById('chatLoadMore');
+    if (lm) lm.innerHTML = '<span class="text-muted text-[11px]">Đã hết tin nhắn</span>';
+    return;
+  }
+
+  CHAT.rows = CHAT.rows.concat(newRows);
+  CHAT.hasMore = !!r.data.hasMore;
+
+  chatRenderMessages();
+  // Giữ nguyên vị trí cuộn tương đối
+  if (scroll) {
+    var newHeight = scroll.scrollHeight;
+    scroll.scrollTop = newHeight - prevHeight;
+  }
+};
+V223_IMPL["chatRefreshBadge__20027"] = async function(machineId) {
+  if (!machineId) return;
+  var r = await gas('getChatUnreadCount', machineId);
+  if (!r || !r.success) return;
+  chatSetBadge(machineId, r.data.unreadCount || 0);
+};
+V223_IMPL["openChatFullForm__20047"] = async function() {
+  // Load options: công đoạn + module của máy
+  var r = await gas('getProductionStages', CHAT.machineId);
+  if (!r || !r.success) return toast('Không tải được công đoạn', 'error');
+
+  var groups = r.data.groups || [];
+  var stageOpts = [{ v: '', t: '— Không gắn công đoạn —' }];
+  var moduleOpts = [{ v: '', t: '— Không gắn module —' }];
+
+  groups.forEach(function (g) {
+    (g.children || []).forEach(function (c) {
+      stageOpts.push({ v: c.stageCode, t: g.label + ' · ' + c.stageName });
+      if (c.moduleId) {
+        moduleOpts.push({ v: c.moduleId, t: c.stageName });
+      }
+    });
+  });
+
+  var body = '<div class="space-y-3">'
+    + '<div class="grid grid-cols-2 gap-3">'
+    +   '<div><label class="block text-[12.5px] font-semibold text-ink mb-1.5">Loại</label>'
+    +     '<select id="chatFormType" class="fld"><option value="CHAT">Tin nhắn</option><option value="REPORT">Báo cáo</option><option value="INCIDENT">Sự cố</option></select></div>'
+    +   '<div><label class="block text-[12.5px] font-semibold text-ink mb-1.5">Mức độ</label>'
+    +     '<select id="chatFormSev" class="fld"><option value="INFO">Bình thường</option><option value="WARNING">Cảnh báo</option><option value="CRITICAL">Nghiêm trọng</option></select></div>'
+    + '</div>'
+    + '<div class="grid grid-cols-2 gap-3">'
+    +   '<div><label class="block text-[12.5px] font-semibold text-ink mb-1.5">Công đoạn</label>'
+    +     '<select id="chatFormStage" class="fld">' + stageOpts.map(function (o) { return '<option value="' + esc(o.v) + '">' + esc(o.t) + '</option>'; }).join('') + '</select></div>'
+    +   '<div><label class="block text-[12.5px] font-semibold text-ink mb-1.5">Module</label>'
+    +     '<select id="chatFormModule" class="fld">' + moduleOpts.map(function (o) { return '<option value="' + esc(o.v) + '">' + esc(o.t) + '</option>'; }).join('') + '</select></div>'
+    + '</div>'
+    + '<div><label class="block text-[12.5px] font-semibold text-ink mb-1.5">Nội dung</label>'
+    +   '<textarea id="chatFormContent" rows="4" class="fld" placeholder="Mô tả chi tiết..."></textarea></div>'
+    + '</div>';
+
+  openModal(modalShell({
+    title: 'Gửi tin nhắn / báo cáo',
+    subtitle: 'Máy ' + CHAT.machineCode,
+    icon: 'post_add',
+    body: body,
+    footer: btnSecondary('Hủy', 'closeModal()', 'close')
+      + btnPrimary('Gửi', 'chatSendFull()', 'send')
+  }), 580);
+};
+V223_IMPL["chatSendFull__20092"] = async function() {
+  var type = (document.getElementById('chatFormType') || {}).value || 'CHAT';
+  var sev = (document.getElementById('chatFormSev') || {}).value || 'INFO';
+  var stageCode = (document.getElementById('chatFormStage') || {}).value || '';
+  var moduleId = (document.getElementById('chatFormModule') || {}).value || '';
+  var content = String((document.getElementById('chatFormContent') || {}).value || '').trim();
+
+  if (!content && !CHAT.attachedImages.length) return toast('Nhập nội dung hoặc đính kèm ảnh', 'error');
+
+  // Lấy tên công đoạn và module
+  var stageName = '';
+  var moduleName = '';
+  if (stageCode) {
+    var r = await gas('getProductionStages', CHAT.machineId);
+    if (r && r.success) {
+      (r.data.groups || []).forEach(function (g) {
+        (g.children || []).forEach(function (c) {
+          if (c.stageCode === stageCode) stageName = c.stageName;
+          if (c.moduleId === moduleId) moduleName = c.stageName;
+        });
+      });
+    }
+  }
+
+  var ok = await chatSend({
+    Content: content,
+    ReportType: type,
+    Severity: sev,
+    StageCode: stageCode,
+    StageName: stageName,
+    ModuleID: moduleId,
+    ModuleName: moduleName,
+    Images: CHAT.attachedImages.filter(function (x) { return !x.uploading; })
+  });
+  if (ok) closeModal();
+};
+V223_IMPL["openMil4MFromChat__20231"] = async function(reportId) {
+  // Lấy dữ liệu chat
+  var chatRow = null;
+  if (CHAT.rows) {
+    chatRow = CHAT.rows.filter(function (r) { return r.ReportID === reportId; })[0];
+  }
+  if (!chatRow) return toast('Không tìm thấy tin nhắn', 'error');
+
+  // Load options: module + stage của máy
+  var opts = await mil4mLoadOptions(CHAT.machineId);
+
+  openMil4MForm({
+    reportId: reportId,
+    chatRow: chatRow,
+    machineId: CHAT.machineId,
+    defaultTitle: String(chatRow.Content || '').split('\n')[0].slice(0, 150),
+    defaultDescription: String(chatRow.Content || ''),
+    defaultCategory: chatRow.ReportType === 'INCIDENT' ? 'MACHINE' : 'MAN',
+    defaultSeverity: chatRow.Severity || 'HIGH',
+    defaultStageCode: chatRow.StageCode || '',
+    defaultStageName: chatRow.StageName || '',
+    defaultModuleId: chatRow.ModuleID || '',
+    defaultModuleName: chatRow.ModuleName || '',
+    stageOptions: opts.stageOptions,
+    moduleOptions: opts.moduleOptions
+  });
+};
+V223_IMPL["openMil4MManualForm__20262"] = async function(machineId) {
+  var opts = await mil4mLoadOptions(machineId);
+  openMil4MForm({
+    machineId: machineId,
+    stageOptions: opts.stageOptions,
+    moduleOptions: opts.moduleOptions,
+    defaultCategory: 'MACHINE',
+    defaultSeverity: 'MEDIUM'
+  });
+};
+V223_IMPL["mil4mLoadOptions__20273"] = async function(machineId) {
+  var stageOptions = [{ v: '', t: '— Không gắn công đoạn —', name: '' }];
+  var moduleOptions = [{ v: '', t: '— Không gắn module —', name: '' }];
+  try {
+    var r = await gas('getProductionStages', machineId);
+    if (r && r.success) {
+      (r.data.groups || []).forEach(function (g) {
+        (g.children || []).forEach(function (c) {
+          stageOptions.push({ v: c.stageCode, t: g.label + ' · ' + c.stageName, name: c.stageName });
+          if (c.moduleId) moduleOptions.push({ v: c.moduleId, t: c.stageName, name: c.stageName });
+        });
+      });
+    }
+  } catch (e) { console.warn('[mil4mLoadOptions]', e); }
+  return { stageOptions: stageOptions, moduleOptions: moduleOptions };
+};
+V223_IMPL["mil4mSubmitCreate__20370"] = async function(reportId, machineId) {
+  var catEl = document.querySelector('.mil4m-cat-opt.active');
+  var category = catEl ? catEl.getAttribute('data-cat') : 'MACHINE';
+  var title = String((document.getElementById('mil4mTitle') || {}).value || '').trim();
+  if (!title) return toast('Nhập tiêu đề', 'error');
+
+  var stageEl = document.getElementById('mil4mStage');
+  var moduleEl = document.getElementById('mil4mModule');
+  var stageCode = stageEl ? stageEl.value : '';
+  var stageName = stageEl && stageEl.selectedIndex >= 0 ? (stageEl.options[stageEl.selectedIndex].getAttribute('data-name') || stageEl.options[stageEl.selectedIndex].textContent.replace(/^.*?· /, '')) : '';
+  var moduleId = moduleEl ? moduleEl.value : '';
+  var moduleName = moduleEl && moduleEl.selectedIndex >= 0 ? (moduleEl.options[moduleEl.selectedIndex].textContent) : '';
+
+  var payload = {
+    Category: category,
+    Title: title,
+    Description: String((document.getElementById('mil4mDescription') || {}).value || '').trim(),
+    RootCause: String((document.getElementById('mil4mRootCause') || {}).value || '').trim(),
+    CorrectiveAction: String((document.getElementById('mil4mAction') || {}).value || '').trim(),
+    Severity: (document.getElementById('mil4mSeverity') || {}).value || 'MEDIUM',
+    Owner: String((document.getElementById('mil4mOwner') || {}).value || '').trim(),
+    DueDate: (document.getElementById('mil4mDue') || {}).value || '',
+    Blocked: !!(document.getElementById('mil4mBlocked') || {}).checked,
+    StageCode: stageCode,
+    StageName: stageName,
+    ModuleID: moduleId,
+    ModuleName: moduleName
+  };
+
+  if (SAVING) return;
+  setSaving(true);
+  try {
+    var r;
+    if (reportId) {
+      r = await gas('createIssueFromChat', Object.assign({ ReportID: reportId }, payload));
+    } else {
+      r = await gas('createMil4MIssue', Object.assign({ MachineID: machineId }, payload));
+    }
+    if (!r || !r.success) return toast(r && r.message || 'Lỗi tạo vấn đề', 'error');
+    toast(r.message);
+    closeModal();
+    // Refresh chat + danh sách issues
+    if (CHAT.machineId) {
+      await chatLoadInitial();
+    }
+    // Nếu đang mở màn issues thì refresh
+    if (typeof mil4mRefreshList === 'function') mil4mRefreshList();
+  } finally {
+    setSaving(false);
+  }
+};
+V223_IMPL["mil4mRefreshList__20424"] = async function() {
+  var host = document.getElementById('mil4mListBody');
+  if (!host) return;
+  host.innerHTML = loadingBlock();
+  var machineId = MIL4M.currentFilter.machineId || '';
+  var r = await gas('getMil4MIssues', Object.assign({}, MIL4M.currentFilter));
+  if (!r || !r.success) {
+    host.innerHTML = '<div class="text-[13px] text-rose-600">' + esc(r && r.message || 'Lỗi tải') + '</div>';
+    return;
+  }
+  MIL4M.currentList = r.data.rows || [];
+  MIL4M.cache.categories = r.data.categories || MIL4M.categories;
+  host.innerHTML = mil4mListHtml(r.data);
+};
+V223_IMPL["openMil4MDetail__20536"] = async function(issueId) {
+  openModalLoading('Vấn đề ' + issueId, 'warning', 720);
+  var r = await gas('getMil4MIssueDetail', issueId);
+  if (!r || !r.success) { closeModal(); return toast(r && r.message || 'Lỗi', 'error'); }
+  var d = r.data;
+  var issue = d.issue;
+
+  var cat = mil4mCategoryMeta(issue.Category);
+
+  var body = '<div class="space-y-3">'
+    + '<div class="flex items-center gap-2 flex-wrap">'
+    +   '<span class="mil4m-badge ' + cat.code + '"><span class="ms text-[14px]">' + cat.icon + '</span>' + esc(cat.label) + '</span>'
+    +   '<span class="mil4m-sev ' + issue.Severity + '">' + esc(mil4mSevLabel(issue.Severity)) + '</span>'
+    +   '<span class="mil4m-status ' + issue.Status + '">' + esc(mil4mStatusLabel(issue.Status)) + '</span>'
+    +   (issue.Blocked ? '<span class="inline-flex items-center gap-1 text-[11px] text-rose-600 font-bold"><span class="ms text-[14px]">block</span>Chặn máy</span>' : '')
+    +   (issue.Source === 'FROM_CHAT' ? '<span class="inline-flex items-center gap-1 text-[11px] text-sky-600 font-semibold"><span class="ms text-[14px]">chat</span>Từ chat</span>' : '')
+    +   '<span class="ml-auto text-[11px] text-muted font-mono">' + esc(issue.IssueID) + '</span>'
+    + '</div>'
+
+    + '<div>'
+    +   '<div class="text-[16px] font-bold text-ink mb-1">' + esc(issue.Title) + '</div>'
+    +   '<div class="text-[11.5px] text-muted">Mở ' + fmtDate(issue.OpenedAt) + ' · bởi ' + esc(issue.CreatedBy || '') + '</div>'
+    + '</div>'
+
+    + (issue.Description ? mil4mFieldBlock('Mô tả', issue.Description) : '')
+    + (issue.RootCause ? mil4mFieldBlock('Nguyên nhân', issue.RootCause) : '')
+    + (issue.CorrectiveAction ? mil4mFieldBlock('Hành động khắc phục', issue.CorrectiveAction) : '')
+    + (issue.Resolution ? mil4mFieldBlock('Kết quả', issue.Resolution) : '')
+
+    + '<div class="grid grid-cols-2 gap-3 pt-2 border-t border-line">'
+    +   '<div><div class="text-[11px] text-muted mb-0.5">Máy</div><div class="text-[13px] font-semibold text-ink">' + esc(d.machine.MachineCode || '') + '</div></div>'
+    +   (issue.StageName ? '<div><div class="text-[11px] text-muted mb-0.5">Công đoạn</div><div class="text-[13px] font-semibold text-ink">' + esc(issue.StageName) + '</div></div>' : '')
+    +   (issue.ModuleName ? '<div><div class="text-[11px] text-muted mb-0.5">Module</div><div class="text-[13px] font-semibold text-ink">' + esc(issue.ModuleName) + '</div></div>' : '')
+    +   (issue.Owner ? '<div><div class="text-[11px] text-muted mb-0.5">Owner</div><div class="text-[13px] font-semibold text-ink">' + esc(issue.Owner) + '</div></div>' : '')
+    +   (issue.DueDate ? '<div><div class="text-[11px] text-muted mb-0.5">Hạn xử lý</div><div class="text-[13px] font-semibold text-ink">' + fmtDate(issue.DueDate) + '</div></div>' : '')
+    + '</div>'
+
+    + (d.sourceChat ? '<div class="mt-3 rounded-xl border border-sky-100 bg-sky-50 p-3">'
+      + '<div class="flex items-center gap-2 mb-2"><span class="ms text-sky-600 text-[18px]">chat</span><span class="text-[12.5px] font-semibold text-sky-900">Tạo từ tin nhắn chat</span></div>'
+      + '<div class="text-[12.5px] text-sky-900 whitespace-pre-wrap">' + esc(d.sourceChat.Content) + '</div>'
+      + '<div class="text-[11px] text-sky-700 mt-2">' + esc(d.sourceChat.ReporterName) + ' · ' + fmtDate(d.sourceChat.CreatedAt) + '</div>'
+      + '</div>' : '')
+    + '</div>';
+
+  var footer = btnSecondary('Đóng', 'closeModal()', 'close');
+
+  if (issue.IsOpen) {
+    if (issue.Status === 'OPEN') {
+      footer += btnSecondary('Đang xử lý', 'mil4mQuickStatus(' + esc(jsArg(issueId)) + ')', 'play_arrow');
+    } else if (issue.Status === 'IN_PROGRESS') {
+      footer += btnSecondary('Quay lại Mới', 'mil4mQuickStatus(' + esc(jsArg(issueId)) + ')', 'undo');
+    }
+    footer += btnSecondary('Sửa', 'mil4mOpenEdit(' + esc(jsArg(issueId)) + ')', 'edit');
+    footer += btnPrimary('Đóng vấn đề', 'mil4mClose(' + esc(jsArg(issueId)) + ')', 'check_circle');
+  } else {
+    // Đã đóng — có thể xóa
+    footer += btnSecondary('Xóa', 'mil4mConfirmDelete(' + esc(jsArg(issueId)) + ')', 'delete');
+  }
+
+  closeModal();
+  openModal(modalShell({
+    title: 'Vấn đề ' + issueId,
+    subtitle: d.machine.MachineCode + (issue.StageName ? ' · ' + issue.StageName : ''),
+    icon: cat.icon,
+    body: body,
+    footer: footer
+  }), 720);
+};
+V223_IMPL["mil4mQuickStatus__20612"] = async function(issueId) {
+  var r = await gas('toggleMil4MStatus', issueId);
+  if (!r || !r.success) return toast(r && r.message || 'Lỗi', 'error');
+  toast(r.message);
+  closeModal();
+  setTimeout(function () { openMil4MDetail(issueId); }, 200);
+  if (typeof mil4mRefreshList === 'function') mil4mRefreshList();
+};
+V223_IMPL["mil4mClose__20621"] = async function(issueId) {
+  var body = '<div>'
+    + '<label class="block text-[12.5px] font-semibold text-ink mb-1.5">Kết quả xử lý</label>'
+    + '<textarea id="mil4mResolution" rows="3" class="fld" placeholder="Mô tả kết quả, cách khắc phục..."></textarea>'
+    + '</div>';
+  openModal(modalShell({
+    title: 'Đóng vấn đề ' + issueId,
+    subtitle: 'Ghi lại kết quả xử lý',
+    icon: 'check_circle',
+    body: body,
+    footer: btnSecondary('Hủy', 'closeModal()', 'close')
+      + btnPrimary('Xác nhận đóng', 'mil4mCloseConfirm(' + esc(jsArg(issueId)) + ')', 'check')
+  }), 520);
+};
+V223_IMPL["mil4mCloseConfirm__20636"] = async function(issueId) {
+  var resolution = String((document.getElementById('mil4mResolution') || {}).value || '').trim();
+  var r = await gas('closeMil4MIssue', issueId, resolution);
+  if (!r || !r.success) return toast(r && r.message || 'Lỗi', 'error');
+  toast(r.message);
+  closeModal();
+  if (typeof mil4mRefreshList === 'function') mil4mRefreshList();
+  if (CHAT.machineId) chatLoadInitial();
+};
+V223_IMPL["mil4mOpenEdit__20646"] = async function(issueId) {
+  var r = await gas('getMil4MIssueDetail', issueId);
+  if (!r || !r.success) return toast(r && r.message || 'Lỗi', 'error');
+  closeModal();
+  var issue = r.data.issue;
+  var opts = await mil4mLoadOptions(issue.MachineID);
+  openMil4MForm({
+    machineId: issue.MachineID,
+    editId: issueId,
+    defaultTitle: issue.Title,
+    defaultDescription: issue.Description,
+    defaultCategory: issue.Category,
+    defaultSeverity: issue.Severity,
+    defaultStageCode: issue.StageCode,
+    defaultStageName: issue.StageName,
+    defaultModuleId: issue.ModuleID,
+    defaultModuleName: issue.ModuleName,
+    stageOptions: opts.stageOptions,
+    moduleOptions: opts.moduleOptions
+  });
+};
+V223_IMPL["productionWorkspace__20831"] = async function(force){if(PRODUCTION_WS&&!force)return PRODUCTION_WS;const r=await gas('getProductionWorkspace');if(!r||!r.success)throw new Error(r&&r.message||'Không tải được dữ liệu sản xuất');PRODUCTION_WS=r.data||{};return PRODUCTION_WS;};
+V223_IMPL["renderProductionTab__20832"] = async function(tab){const body=$('#tabBody');if(!body)return;body.innerHTML=loadingBlock();try{if(tab==='assembly')return renderAssemblyDashboardTab();const d=await productionWorkspace(true);if(tab==='planning')return renderProductionPlanning(d);if(tab==='resources')return renderProductionResources(d);if(tab==='skills')return renderProductionSkills(d);return renderProductionMachines(d);}catch(e){body.innerHTML=emptyState(e.message||'Không tải được dữ liệu');}};
+V223_IMPL["openProductionMachine__20844"] = async function(machineId){openModalLoading('Chi tiết sản xuất','precision_manufacturing',1180);const r=await gas('getProductionMachineWorkspace',machineId);if(!r||!r.success){closeModal();return toast(r&&r.message||'Không tải được máy','error');}const d=r.data||{},x=d.overview||{},ex=d.execution||{},mods=(ex.modules||[]),as=(ex.assignments||[]),issues=(ex.issues||[]).filter(i=>!['CLOSED','RESOLVED','COMPLETED'].includes(String(i.Status||'').toUpperCase())),orders=d.orders||[];const head='<div class="grid grid-cols-2 lg:grid-cols-5 gap-2 mb-4">'+prodMini('BOM',x.ReleasedBOMVersion||'Chưa release',x.BOMStatus)+prodMini('CTB',fmtNum(x.CTBPercent)+'%',x.CTBStatus)+prodMini('Kit',x.ReleasedKitCount+'/'+x.KitCount,'')+prodMini('Sản xuất',fmtNum(x.ProductionProgress)+'%',x.ProductionStatus)+prodMini('Issue mở',x.OpenIssues,x.OpenIssues?'BLOCKED':'READY')+'</div>';const actions='<div class="flex flex-wrap gap-2 mb-4">'+btnSecondary('Mở BOM','productionGoBOM('+jsArg(machineId)+')','schema')+btnSecondary('Mở CTB','productionGoCTB('+jsArg(machineId)+')','inventory')+btnSecondary('Tạo kit','closeModal();openMaterialKitForm()','inventory_2')+btnPrimary('Lập kế hoạch','closeModal();openMachineProductionPlan('+jsArg(machineId)+')','calendar_add_on')+'</div>';const body=head+actions+'<div class="grid grid-cols-1 lg:grid-cols-2 gap-4"><div>'+prodSection('Cụm / module',procTable([{label:'Mã cụm',key:'ModuleCode'},{label:'Tên cụm',key:'ModuleName'},{label:'Tiến độ',render:m=>fmtNum(m.ProgressPercent)+'%'},{label:'Vật tư',render:m=>prodPill(m.MaterialStatus)}],mods,{empty:'Chưa khai báo cụm.'}))+prodSection('Lệnh sản xuất',procTable([{label:'Mã lệnh',key:'ProductionID'},{label:'BOM',key:'BOMVersionID'},{label:'Kit',key:'KitID'},{label:'Tiến độ',render:o=>fmtNum(o.ProgressPercent)+'%'},{label:'Trạng thái',render:o=>badge(o.Status)}],orders,{empty:'Chưa lập kế hoạch.'}))+'</div><div>'+prodSection('Nhân sự đã phân công',procTable([{label:'Nhân sự',key:'EmployeeName'},{label:'Vai trò',key:'Role'},{label:'Công đoạn',key:'Stage'},{label:'Phân bổ',render:a=>fmtNum(a.AllocationPercent)+'%'}],as,{empty:'Chưa phân công nhân sự.'}))+prodSection('Issue đang mở',procTable([{label:'Mô tả',key:'Description'},{label:'Owner',key:'Owner'},{label:'Hạn',render:i=>fmtDate(i.DueDate)},{label:'Mức độ',render:i=>assemblySeverityBadge(i.Severity)}],issues,{empty:'Không có issue mở.'}))+'</div></div>';closeModal();openModal(modalShell({title:(x.MachineCode||'Máy')+' · '+(x.MachineName||''),subtitle:(x.ProjectCode||'')+' · BOM '+(x.ReleasedBOMVersion||'chưa phát hành'),icon:'precision_manufacturing',body,footer:btnSecondary('Đóng','closeModal()','close')}),1180);};
+V223_IMPL["openMachineProductionPlan__20854"] = async function(machineId){try{const d=await productionWorkspace(false),machines=(d.machines||[]).filter(x=>x.BOMStatus==='RELEASED'),selected=machineId||APP_CONTEXT.machineId||(machines[0]||{}).MachineID;if(!machines.length)return toast('Chưa có máy nào có BOM đã phát hành','error');const m=machines.find(x=>x.MachineID===selected)||machines[0],emps=d.employees||[],body=field('Máy *',sel('ppMachine',machines.map(x=>({v:x.MachineID,t:(x.ProjectCode||'')+' · '+x.MachineCode+' · BOM '+x.ReleasedBOMVersion})),m.MachineID).replace('class="fld"','class="fld" onchange="productionPlanMachineChanged()"'))+'<div id="ppContext">'+productionPlanContext(m,d)+'</div>'+row3(field('Bắt đầu kế hoạch',inp('ppStart','','date',m.PlanStart||todayInput())),field('Kết thúc kế hoạch',inp('ppEnd','','date',m.PlanEnd||'')),field('Giờ kế hoạch',inp('ppHours','VD: 320','number','')))+row2(field('Leader',sel('ppLeader',[{v:'',t:'-- Chọn leader --'}].concat(emps.map(e=>({v:e.EmployeeID,t:(e.EmployeeCode||'')+' — '+e.FullName}))),'')),field('Trạng thái',sel('ppStatus',['Đã lên lệnh','Đang sản xuất'],'Đã lên lệnh')))+field('Ghi chú',txt('ppNotes','Phạm vi công việc / mốc cần lưu ý'));openModal(modalShell({title:'Lập kế hoạch sản xuất theo máy',subtitle:'BOM lấy từ phiên bản đã phát hành mới nhất',icon:'calendar_add_on',body,footer:btnSecondary('Hủy','closeModal()','close')+btnPrimary('Tạo kế hoạch','saveMachineProductionPlan()','save')}),760);}catch(e){toast(e.message,'error');}};
+V223_IMPL["saveMachineProductionPlan__20857"] = async function(){const d=PRODUCTION_WS||{},m=(d.machines||[]).find(x=>x.MachineID===amcvnVal('ppMachine'));if(!m)return toast('Chọn máy','error');setSaving(true);const r=await gas('createMachineProductionPlan',{MachineID:m.MachineID,BOMVersionID:m.ReleasedBOMID,KitID:amcvnVal('ppKit'),LeaderEmployeeID:amcvnVal('ppLeader'),PlanStartDate:amcvnVal('ppStart'),PlanEndDate:amcvnVal('ppEnd'),PlannedHours:amcvnVal('ppHours'),Status:amcvnVal('ppStatus'),Notes:amcvnVal('ppNotes')});setSaving(false);if(!r||!r.success)return toast(r&&r.message||'Không tạo được kế hoạch','error');closeModal();PRODUCTION_WS=null;toast(r.message);renderProductionTab(STATE.tab.production||'overview');};
+V223_IMPL["saveCapability__20859"] = async function(id){const r=await gas('updateEmployeeCapability',id,{EmployeeType:amcvnVal('capType'),SkillLevel:amcvnVal('capLevel'),Specialties:amcvnVal('capSpecial'),TrainingStatus:amcvnVal('capTraining')});if(!r||!r.success)return toast(r&&r.message||'Không lưu được','error');closeModal();PRODUCTION_WS=null;toast(r.message);renderProductionTab('skills');};
+V223_IMPL["saveTrainingPlanForm__20861"] = async function(){const r=await gas('saveTrainingPlan','',{EmployeeID:amcvnVal('trEmployee'),TrainerEmployeeID:amcvnVal('trTrainer'),SkillName:amcvnVal('trSkill'),CurrentLevel:amcvnVal('trCurrent'),TargetLevel:amcvnVal('trTarget'),Status:amcvnVal('trStatus'),StartDate:amcvnVal('trStart'),DueDate:amcvnVal('trDue'),Notes:amcvnVal('trNotes')});if(!r||!r.success)return toast(r&&r.message||'Không lưu được','error');closeModal();PRODUCTION_WS=null;toast(r.message);renderProductionTab('skills');};
+V223_IMPL["openMachineBOMLineForm__20876"] = async function(lineId){if(lineId)return openMachineBOMLineEditV202(lineId);const d=MACHINE_BOM_CACHE||{};if(!d.selectedVersion)return;if(!d.optionsLoaded){const r=await gas('getMachineBOMOptions',d.machine.MachineID);if(!r||!r.success)return toast(r&&r.message||'Không tải được danh mục','error');d.products=r.data.products||[];d.modules=r.data.modules||[];d.optionsLoaded=true;}BOM_ADD_SELECTED={};const body='<div class="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3"><input id="bomPickSearch" oninput="renderBOMProductPicker()" class="fld" placeholder="Tìm SKU, mã hàng, vật tư..."><select id="bomPickClass" onchange="renderBOMProductPicker()" class="fld"><option value="">Tất cả phân loại</option><option>CNC</option><option>KLT</option><option>STD</option><option value="OTHER">Khác</option></select></div><div id="bomProductPicker" class="border border-line rounded-xl max-h-[250px] overflow-auto"></div><h4 class="font-semibold text-[13px] mt-4 mb-2">Dòng BOM đã chọn</h4><div id="bomSelectedLines"></div>';openModal(modalShell({title:'Thêm nhiều dòng BOM',subtitle:'Tìm kiếm, tích chọn và nhập số lượng theo dòng',icon:'playlist_add',body,footer:btnSecondary('Hủy','closeModal()','close')+btnPrimary('Thêm vào BOM','saveMachineBOMLinesBatch()','save')}),1100);renderBOMProductPicker();renderBOMSelectedLines();};
+V223_IMPL["saveMachineBOMLinesBatch__20880"] = async function(){const d=MACHINE_BOM_CACHE||{},a=Object.values(BOM_ADD_SELECTED);if(!a.length)return toast('Chọn ít nhất một vật tư','error');const items=a.map((x,i)=>{const mq=Number(amcvnVal('bapMq'+i)),qpm=Number(amcvnVal('bapQpm'+i));return{ProductID:x.ProductID,ModuleID:amcvnVal('bapMod'+i),ModuleQty:mq,QtyPerModule:qpm,QtyPerMachine:mq*qpm,SpareQty:Number(amcvnVal('bapSpare'+i)),BOMGroup:amcvnVal('bapGroup'+i),CriticalLevel:amcvnVal('bapCrit'+i)};});setSaving(true);const r=await gas('createMachineBOMLinesBatch',d.selectedVersion.BOMVersionID,{items});setSaving(false);if(!r||!r.success)return toast(r&&r.message||'Không thêm được dòng BOM','error');closeModal();toast(r.message);openMachineBOM(d.machine.MachineID,d.selectedVersion.BOMVersionID);};
+V223_IMPL["renderProductionPlanning__20907"] = async function(){const body=$('#tabBody');if(!body)return;body.innerHTML=loadingBlock();const r=await gas('getProductionScheduleData',{projectId:APP_CONTEXT.projectId||'',machineId:APP_CONTEXT.machineId||''});if(!r||!r.success){body.innerHTML=emptyState(r&&r.message||'Không tải được kế hoạch');return;}PROD_PLAN_V203=r.data||{};if(APP_CONTEXT.machineId)PROD_PLAN_MACHINE=APP_CONTEXT.machineId;renderProductionPlanningContent();};
+V223_IMPL["openProductionStagePlanner__20911"] = async function(machineId){let r=await gas('getProductionScheduleData',{machineId:machineId||APP_CONTEXT.machineId||''});if(!r||!r.success)return toast(r&&r.message||'Không tải được kế hoạch','error');let d=r.data||{},machines=d.machines||[];if(!machines.length){const all=await gas('getProductionScheduleData',{});if(!all||!all.success||!(all.data.machines||[]).length)return toast('Chưa có máy để lập kế hoạch','error');d=all.data;machines=d.machines;}
+ let m=machines.find(x=>x.MachineID===(machineId||APP_CONTEXT.machineId))||machines[0];if(!m.stages||!m.stages.length){const one=await gas('getProductionScheduleData',{machineId:m.MachineID});if(one&&one.success&&(one.data.machines||[]).length){d=one.data;machines=d.machines;m=machines[0];}}if(!m.BOMVersionID)return toast('Máy chưa có BOM đã phát hành','error');const emps=d.employees||[],stageRows=m.stages||[],starts=stageRows.map(x=>x.PlanStartDate).filter(Boolean).sort(),ends=stageRows.map(x=>x.PlanEndDate).filter(Boolean).sort(),empOpts=[{v:'',t:'-- Chưa gán --'}].concat(emps.map(e=>({v:e.EmployeeID,t:(e.EmployeeCode||'')+' — '+e.FullName}))),stageOpts=[{v:'',t:'-- Không phụ thuộc --'}].concat(stageRows.map(s=>({v:s.StageID,t:s.GroupCode+' · '+s.StageName})));window.PP_V203_EDIT={machine:m,employees:emps};const top='<div class="rounded-xl bg-indigo-50 border border-indigo-100 p-3 mb-3 text-[12px]"><b>'+esc(m.ProjectCode+' · '+m.MachineCode)+'</b> · BOM '+esc(m.BOMVersion)+'<div class="text-muted mt-1">Cây công đoạn lấy trực tiếp từ Assembly Control. Lưu kế hoạch sẽ cập nhật cả Gantt và Assembly.</div></div><div class="grid grid-cols-2 xl:grid-cols-5 gap-2 mb-3">'+field('Bắt đầu toàn máy',inp('ppvStart','','date',starts[0]||m.PlanStartDate||todayInput()))+field('Target toàn máy',inp('ppvEnd','','date',ends[ends.length-1]||m.PlanEndDate||''))+field('Leader mặc định',sel('ppvLeader',empOpts,''))+field('Khu vực mặc định',inp('ppvWorkCenter','Assembly A/B'))+'<div class="flex items-end"><button onclick="ppV203AutoSchedule()" class="btn-primary w-full h-[42px]"><span class="ms">auto_fix_high</span> Phân bổ tự động</button></div></div><div class="flex items-center gap-2 mb-2"><button onclick="ppV203ApplyOwner()" class="btn">Áp dụng Leader/khu vực cho tất cả</button><label class="text-[12px] text-muted"><input id="ppvRebaseline" type="checkbox"> Đặt lại baseline</label></div>';const rows=stageRows.map((s,i)=>'<tr data-pp-stage="'+esc(s.StageID)+'" data-group="'+esc(s.GroupCode)+'"><td><span class="pp-group-chip">'+esc(s.GroupCode)+'</span></td><td><b>'+esc(s.StageName)+'</b><div class="proc-sub">'+esc(s.ReadinessStatus||'')+(s.OpenIssues?' · '+s.OpenIssues+' issue':'')+'</div></td><td><input data-f="start" type="date" value="'+esc(s.PlanStartDate||'')+'" class="fld h-9 min-w-[132px]"></td><td><input data-f="end" type="date" value="'+esc(s.PlanEndDate||'')+'" class="fld h-9 min-w-[132px]"></td><td><input data-f="hours" type="number" min="0" value="'+esc(s.PlannedHours||'')+'" class="fld h-9 w-20 text-right"></td><td>'+sel('ppvLead'+i,empOpts,s.LeaderEmployeeID||'').replace('class="fld"','data-f="leader" class="fld h-9 min-w-[160px]"')+'</td><td><input data-f="work" value="'+esc(s.WorkCenter||'')+'" class="fld h-9 min-w-[110px]" placeholder="Khu vực"></td><td>'+sel('ppvPred'+i,stageOpts.filter(x=>x.v!==s.StageID),s.PredecessorStageID||'').replace('class="fld"','data-f="pred" class="fld h-9 min-w-[180px]"')+'</td></tr>').join('');const body=top+'<div class="proc-grid max-h-[55vh] material-compact"><table style="min-width:1220px"><thead><tr><th>Nhóm</th><th>Công đoạn / Cụm</th><th>Bắt đầu</th><th>Kết thúc</th><th>Giờ KH</th><th>Phụ trách</th><th>Khu vực</th><th>Công đoạn trước</th></tr></thead><tbody id="ppvRows">'+rows+'</tbody></table></div>';openModal(modalShell({title:'Kế hoạch sản xuất chi tiết',subtitle:m.MachineCode+' · '+stageRows.length+' công đoạn',icon:'calendar_month',body,footer:btnSecondary('Hủy','closeModal()','close')+btnPrimary('Lưu và đồng bộ Assembly','saveProductionStagePlanner()','save')}),1280);};
+V223_IMPL["saveProductionStagePlanner__20915"] = async function(){const edit=window.PP_V203_EDIT;if(!edit)return;const items=[...document.querySelectorAll('#ppvRows tr')].map(r=>({StageID:r.dataset.ppStage,PlanStartDate:r.querySelector('[data-f="start"]').value,PlanEndDate:r.querySelector('[data-f="end"]').value,PlannedHours:Number(r.querySelector('[data-f="hours"]').value)||0,LeaderEmployeeID:r.querySelector('[data-f="leader"]').value,WorkCenter:r.querySelector('[data-f="work"]').value,PredecessorStageID:r.querySelector('[data-f="pred"]').value,DependencyType:'FS'}));if(items.some(x=>!x.PlanStartDate||!x.PlanEndDate))return toast('Nhập đủ ngày cho tất cả công đoạn','error');setSaving(true);const r=await gas('saveMachineStagePlan',edit.machine.MachineID,{items,LeaderEmployeeID:amcvnVal('ppvLeader'),Rebaseline:($('#ppvRebaseline')||{}).checked});setSaving(false);if(!r||!r.success)return toast(r&&r.message||'Không lưu được kế hoạch','error');closeModal();toast(r.message);PRODUCTION_WS=null;const x=await gas('getProductionScheduleData',{projectId:APP_CONTEXT.projectId||'',machineId:PROD_PLAN_MACHINE||''});if(x&&x.success){PROD_PLAN_V203=x.data;renderProductionPlanningContent();}};
+V223_IMPL["openStageExecutionFromPlan__20917"] = async function(machineId,stageId){await openStageTree(machineId);setTimeout(()=>openStageExecutionV203(stageId),50);};
+V223_IMPL["saveStageExecutionV203__20920"] = async function(stageId){setSaving(true);const r=await gas('updateStageExecutionV203',stageId,{ProgressPercent:amcvnVal('ppeProgress'),Status:amcvnVal('ppeStatus'),ActualHours:amcvnVal('ppeHours'),ActualStartAt:amcvnVal('ppeStart'),ActualEndAt:amcvnVal('ppeEnd'),Notes:amcvnVal('ppeNotes')});setSaving(false);if(!r||!r.success)return toast(r&&r.message||'Không lưu được thực tế','error');closeModal();toast(r.message);await openStageTree(STAGE_TREE_STATE.data.machine.MachineID);};
+V223_IMPL["openMachineMaterials__20932"] = async function(machineId){const p=$('#page');p.innerHTML=loadingBlock();p.dataset.module='machine-materials';const rs=await Promise.all([gas('getMachineDetail',machineId),gas('getMaterialRequirements',machineId,{includeECN:true})]);if(!rs[0]||!rs[0].success||!rs[1]||!rs[1].success){p.innerHTML=emptyState((rs[0]&&rs[0].message)||(rs[1]&&rs[1].message)||'Không tải được vật tư');return;}const d=rs[0].data,m=d.machine,project=d.project||{},ctb=d.ctb||{},rows=rs[1].data||[],actions=(canEdit('material_control')?btnSecondary('Đồng bộ từ BOM','refreshMachineMaterials('+jsArg(machineId)+')','sync'):'')+(canAdd('material_control')?btnSecondary('Tạo exception','openMaterialExceptionForm('+jsArg(machineId)+')','warning'):'')+(canAdd('material_control')?btnPrimary('Nhu cầu ngoài BOM','openMaterialRequirementPicker('+jsArg(machineId)+')','playlist_add'):'');const head='<button onclick="openMachineDetail('+esc(jsArg(machineId))+')" class="text-[13px] text-brand-600 font-semibold inline-flex items-center gap-1 mb-3"><span class="ms">arrow_back</span>'+esc(m.MachineCode||'Máy')+'</button>'+pageHeader('Material CTB — '+m.MachineCode,(project.ProjectCode||'')+' · quản lý vật tư theo máy và cụm',actions),kpis='<div class="grid grid-cols-2 xl:grid-cols-5 gap-3 mb-3">'+kpiCard('CTB',Math.round(Number(ctb.percent)||0)+'%','speed',ctb.status==='BLOCKED'?'bg-rose-50 text-rose-600':'bg-emerald-50 text-emerald-600')+kpiCard('Ready lines',(ctb.readyLines||0)+' / '+(ctb.totalLines||0),'check_circle','bg-emerald-50 text-emerald-600')+kpiCard('Shortage',ctb.shortageLines||0,'warning','bg-amber-50 text-amber-600')+kpiCard('Critical A',ctb.criticalShortage||0,'report','bg-rose-50 text-rose-600')+kpiCard('Đã giữ chỗ',fmtNum(rows.reduce((n,x)=>n+Number(x.ReservedQty||0),0)),'lock','bg-indigo-50 text-indigo-600')+'</div>',cols=[{label:'Loại',render:x=>materialClassBadge(x.MaterialClass)+'<div class="mt-1">'+materialCriticalBadge(x.CriticalLevel)+'</div>'+materialECNBadgeV218(x)},{label:'Mã hàng / Vật tư',render:x=>'<b>'+esc(x.PartNumber||x.SKU||'')+'</b><div class="proc-sub">'+esc(x.ProductName||'')+' · '+esc(x.SKU||'')+'</div>'},{label:'Cụm',render:x=>'<b>'+esc(x.ModuleCode||'Toàn máy')+'</b><div class="proc-sub">'+esc(x.ModuleName||'')+'</div>'},{label:'Số lượng',render:materialQtySummary},{label:'Giữ chỗ',right:true,render:x=>'<b class="text-indigo-700">'+fmtNum(x.ReservedQty||0)+'</b>'},{label:'Ngày cần / Owner',render:x=>'<b>'+esc(fmtDate(x.RequiredDate)||'-')+'</b><div class="proc-sub">'+esc(x.Owner||'')+'</div>'},{label:'Quản lý / Trạng thái',render:x=>stockModeBadge(x.InventoryMode)+'<div class="mt-1">'+badge(amcvnStatusLabel(x.MaterialStatus))+'</div>'},{label:'',render:x=>String(x.ECNChangeType||'').toUpperCase()==='REMOVED'?'<button onclick="event.stopPropagation();openMaterialRequirement('+esc(jsArg(x.RequirementID))+')" class="p-2 text-slate-500" title="Lịch sử ECN"><span class="ms">history</span></button>':(canEdit('material_control')?'<div class="flex gap-1"><button onclick="event.stopPropagation();openMaterialReservation('+esc(jsArg(x.RequirementID))+')" class="p-2 text-indigo-600" title="Giữ chỗ"><span class="ms">lock</span></button><button onclick="event.stopPropagation();openMaterialRequirement('+esc(jsArg(x.RequirementID))+')" class="p-2 text-brand-600" title="Chi tiết"><span class="ms">open_in_new</span></button></div>':'')}];p.innerHTML=head+kpis+materialCompactTable('machineMaterialsV204',rows,cols,{search:['SKU','PartNumber','ProductName','ModuleCode','ModuleName','Owner','SourceType'],searchPlaceholder:'Tìm SKU, mã hàng, vật tư, cụm hoặc owner...',selects:[{field:'MaterialClass',label:'Phân loại',options:['CNC','KLT','STD','OTHER']},{field:'CriticalLevel',label:'Critical',options:['A','B','C']},{field:'InventoryMode',label:'Quản lý',options:['DEDICATED','COMMON']},{field:'MaterialStatus',label:'Trạng thái'}],dateField:'RequiredDate',idKey:'RequirementID',onRowClick:'openMaterialRequirement',empty:'Chưa có nhu cầu vật tư. Đồng bộ từ BOM hoặc tạo nhu cầu ngoài BOM.'});};
+V223_IMPL["openMachineMaterials__21117"] = async function(machineId){
+  await openMachineMaterialsV205Base(machineId);
+  const p=$('#page');
+  if(!p||p.dataset.module!=='machine-materials')return;
+  const k=p.querySelector('.grid.grid-cols-2.xl\\:grid-cols-5');
+  if(k)k.remove();
+};
+V223_IMPL["checkMachineBOMImport__21157"] = async function(){
+  if(MACHINE_BOM_IMPORT_BUSY)return;const s=MACHINE_BOM_IMPORT;if(!s)return;if(!s.versionId)s.versionNo=amcvnVal('mbImportVersion');
+  MACHINE_BOM_IMPORT_BUSY=true;setSaving(true);
+  try{
+    const r=await gas('previewMachineBOMImport',s.versionId,s.sheets[s.index].rows,{machineId:s.machineId,versionNo:s.versionNo,createMissingProducts:true});
+    if(!r||!r.success)throw new Error(r&&r.message||'Không kiểm tra được BOM');
+    const d=r.data;s.preview=d;const actions=btnSecondary('Quay lại','renderMachineBOMImportSetup()','arrow_back')+(d.imported?btnPrimary('Nhập '+d.imported+' dòng','importMachineBOMExcel()','upload'):'');
+    const body=bomV206TopActions(actions)+'<p class="mb-3">Thêm <b>'+d.imported+'</b> dòng BOM · Tạo <b>'+d.createdProducts+'</b> mã hàng · Dùng lại <b>'+d.reusedProducts+'</b> mã hàng · Tạo <b>'+d.createdModules+'</b> cụm.</p><p class="mb-3">Giữ nguyên '+d.duplicateLines+' dòng đã có; bỏ qua '+(d.conflicts+d.invalid)+' dòng xung đột/không hợp lệ. '+(s.versionId?'':'BOM nháp '+esc(s.versionNo)+' sẽ được tạo khi nhập.')+'</p><div class="max-h-[58vh] overflow-auto">'+machineBOMImportDetails(d.details)+'</div>';
+    openModal(modalShell({title:'Kết quả kiểm tra BOM',subtitle:s.fileName+' · '+s.sheets[s.index].name,icon:'fact_check',body,footer:''}),1050);
+  }catch(e){toast(e.message,'error');}finally{MACHINE_BOM_IMPORT_BUSY=false;setSaving(false);}
+};
+V223_IMPL["renderProductionTab__21271"] = async function(tab){if(tab==='capacity')return renderCapacityV207();if(tab==='documents')return renderDocumentsV207();if(tab==='costs')return renderCostsV207();return renderProductionTabV207Base(tab);};
+V223_IMPL["renderCapacityV207__21277"] = async function(){const body=$('#tabBody');body.innerHTML=loadingBlock();const r=await gas('getCapacityPlanning',{weeks:12});if(!r||!r.success){body.innerHTML=emptyState(r&&r.message);return;}const d=OPS_CAP=r.data||{},s=d.summary||{},weeks=d.weeks||[];const head='<th>Nhân sự</th><th>Level / Chuyên môn</th><th>Năng lực</th>'+weeks.map(w=>'<th>Tuần '+esc(String(w.label).slice(5))+'</th>').join('')+'<th>Cảnh báo</th>';const rows=(d.rows||[]).map(x=>'<tr><td><b>'+esc(x.FullName)+'</b><div class="text-muted">'+esc((x.EmployeeCode||'')+' · '+(x.Position||''))+'</div></td><td><b>'+esc(x.SkillLevel||'L0')+'</b><div class="text-muted max-w-[180px] truncate">'+esc(x.Specialties||'-')+'</div></td><td>'+fmtNum(x.Capacity)+'h</td>'+(x.loads||[]).map(v=>'<td><span class="cap-cell '+(v>x.Capacity?'cap-over':v>x.Capacity*.8?'cap-warn':'cap-ok')+'">'+fmtNum(v)+'h · '+Math.round(v*100/x.Capacity)+'%</span></td>').join('')+'<td>'+(x.SkillGaps.length?'<span class="text-rose-600 font-bold">Thiếu skill: '+esc(x.SkillGaps.join(', '))+'</span>':x.MaxPercent>100?'<span class="text-rose-600 font-bold">Quá tải '+x.MaxPercent+'%</span>':'-')+'</td></tr>').join('');const outCols=[{label:'Nhân sự',render:x=>'<b>'+esc(x.FullName)+'</b><div class="text-[11px] text-muted">'+esc(x.SupplierName||'')+'</div>'},{label:'Level',key:'SkillLevel'},{label:'Chuyên môn',key:'Specialties'},{label:'Năng lực/tuần',right:true,render:x=>fmtNum(x.WeeklyCapacityHours)+'h'},{label:'Đơn giá/giờ',right:true,render:x=>opsFmtMoney(x.HourlyRate)},{label:'Sẵn sàng',render:x=>(fmtDate(x.AvailableFrom)||'-')+' → '+(fmtDate(x.AvailableTo)||'-')},{label:'Trạng thái',render:x=>opsStatusPill(x.Status)},{label:'',render:x=>'<button class="text-brand-600" onclick="openOutsourceV207('+esc(jsArg(x.OutsourceID))+')"><span class="ms">edit</span></button>'}];body.innerHTML='<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-3">'+kpiCard('Nhân sự nội bộ',s.employees||0,'groups','bg-blue-50 text-blue-600')+kpiCard('Quá tải >100%',s.overloaded||0,'warning','bg-rose-50 text-rose-600')+kpiCard('Thiếu level/skill',s.skillGaps||0,'engineering','bg-amber-50 text-amber-600')+kpiCard('Outsource sẵn sàng',s.outsourceAvailable||0,'handyman','bg-violet-50 text-violet-600')+'</div><div class="flex justify-between mb-2"><div class="text-[12px] text-muted">Tải tuần = giờ kế hoạch hoặc % phân bổ × năng lực tuần.</div>'+btnSecondary('Phân công nội bộ','openCapacityAssignmentV207()','assignment_ind')+btnPrimary('Thêm outsource','openOutsourceV207()','person_add')+'</div><div class="cap-grid mb-4"><table><thead><tr>'+head+'</tr></thead><tbody>'+rows+'</tbody></table></div>'+card('<div class="p-4 border-b border-line"><b>Nhân sự outsource</b></div>'+dataTable(outCols,d.outsource||[],{empty:'Chưa có nhân sự outsource.'}));};
+V223_IMPL["saveOutsourceV207__21280"] = async function(id){const r=await gas('saveOutsourceResource',id,{SupplierID:amcvnVal('osSupplier'),FullName:amcvnVal('osName'),SkillLevel:amcvnVal('osLevel'),WeeklyCapacityHours:amcvnVal('osCap'),HourlyRate:amcvnVal('osRate'),Specialties:amcvnVal('osSkill'),AvailableFrom:amcvnVal('osFrom'),AvailableTo:amcvnVal('osTo'),Phone:amcvnVal('osPhone'),Status:amcvnVal('osStatus'),Notes:amcvnVal('osNotes')});if(!r||!r.success)return toast(r&&r.message||'Không lưu được','error');closeModal();toast(r.message);renderCapacityV207();};
+V223_IMPL["renderDocumentsV207__21282"] = async function(){const body=$('#tabBody');body.innerHTML=loadingBlock();const r=await gas('getEngineeringDocuments',{});if(!r||!r.success){body.innerHTML=emptyState(r&&r.message);return;}const d=OPS_DOCS=r.data||{},s=d.summary||{},mm={};(d.refs.machines||[]).forEach(x=>mm[x.MachineID]=x);const cols=[{label:'Máy',render:x=>esc((mm[x.MachineID]||{}).MachineCode||x.MachineID)},{label:'Loại',key:'DocumentType'},{label:'Số tài liệu',render:x=>'<b>'+esc(x.DocumentNo)+'</b>'},{label:'Tên tài liệu',key:'Title'},{label:'Rev',render:x=>'<b>'+esc(x.Revision)+'</b>'},{label:'BOM / ECN',render:x=>esc((x.BOMVersionID||'-')+' / '+(x.ECNNo||'-'))},{label:'Owner',key:'Owner'},{label:'Trạng thái',render:x=>opsStatusPill(x.Status)},{label:'',render:x=>'<div class="flex gap-2">'+(x.DriveUrl?'<a target="_blank" href="'+esc(x.DriveUrl)+'" class="text-blue-600"><span class="ms">open_in_new</span></a>':'')+'<button onclick="openDocumentV207('+esc(jsArg(x.DocumentID))+')" class="text-brand-600"><span class="ms">edit</span></button></div>'}];body.innerHTML='<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-3">'+kpiCard('Tổng tài liệu',s.total||0,'folder','bg-blue-50 text-blue-600')+kpiCard('Draft',s.draft||0,'edit_document','bg-slate-50 text-slate-600')+kpiCard('Chờ review',s.review||0,'rate_review','bg-amber-50 text-amber-600')+kpiCard('Đã phát hành',s.released||0,'verified','bg-emerald-50 text-emerald-600')+'</div>'+materialCompactTable('engDocsV207',d.rows||[],cols,{search:['DocumentNo','Title','Revision','ECNNo','Owner'],searchPlaceholder:'Tìm số tài liệu, tên, revision, ECN...',selects:[{field:'DocumentType',label:'Loại tài liệu'},{field:'Status',label:'Trạng thái'},{field:'MachineID',label:'Máy'}],action:btnPrimary('Thêm tài liệu','openDocumentV207()','note_add'),empty:'Chưa có tài liệu kỹ thuật.'});};
+V223_IMPL["saveDocumentV207__21284"] = async function(id){const r=await gas('saveEngineeringDocument',id,{MachineID:amcvnVal('docMachine'),DocumentType:amcvnVal('docType'),DocumentNo:amcvnVal('docNo'),Title:amcvnVal('docTitle'),Revision:amcvnVal('docRev'),Status:amcvnVal('docStatus'),BOMVersionID:amcvnVal('docBom'),ECNNo:amcvnVal('docEcn'),DriveUrl:amcvnVal('docUrl'),Owner:amcvnVal('docOwner'),Reviewer:amcvnVal('docReviewer'),Approver:amcvnVal('docApprover'),Notes:amcvnVal('docNotes')});if(!r||!r.success)return toast(r&&r.message||'Không lưu được','error');closeModal();toast(r.message);renderDocumentsV207();};
+V223_IMPL["renderCostsV207__21286"] = async function(){const body=$('#tabBody');body.innerHTML=loadingBlock();const r=await gas('getProjectCostWorkspace');if(!r||!r.success){body.innerHTML=emptyState(r&&r.message);return;}const d=OPS_COSTS=r.data||{},s=d.summary||{},mm={};(d.refs.machines||[]).forEach(x=>mm[x.MachineID]=x);const cols=[{label:'Ngày',render:x=>fmtDate(x.CostDate)},{label:'Dự án / Máy',render:x=>'<b>'+esc((mm[x.MachineID]||{}).MachineCode||x.MachineID)+'</b>'},{label:'Loại',key:'CostType'},{label:'Nội dung',key:'Description'},{label:'Ngân sách',right:true,render:x=>opsFmtMoney(x.BudgetAmount)},{label:'Thực tế',right:true,render:x=>'<b class="'+(Number(x.ActualAmount)>Number(x.BudgetAmount)&&Number(x.BudgetAmount)>0?'text-rose-600':'')+'">'+opsFmtMoney(x.ActualAmount)+'</b>'},{label:'Nguồn',render:x=>esc((x.SourceType||'')+' '+(x.SourceID||''))},{label:'Trạng thái',render:x=>opsStatusPill(x.Status)},{label:'',render:x=>'<button class="text-brand-600" onclick="openCostV207('+esc(jsArg(x.CostID))+')"><span class="ms">edit</span></button>'}];body.innerHTML='<div class="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-3">'+kpiCard('Ngân sách',opsFmtMoney(s.budget),'account_balance_wallet','bg-blue-50 text-blue-600')+kpiCard('Chi phí thực tế',opsFmtMoney(s.actual),'payments','bg-violet-50 text-violet-600')+kpiCard('Còn lại',opsFmtMoney(s.variance),'savings',s.variance<0?'bg-rose-50 text-rose-600':'bg-emerald-50 text-emerald-600')+kpiCard('Tình trạng',s.over?'VƯỢT NGÂN SÁCH':'TRONG NGÂN SÁCH',s.over?'warning':'verified',s.over?'bg-rose-50 text-rose-600':'bg-emerald-50 text-emerald-600')+'</div>'+materialCompactTable('projectCostsV207',d.rows||[],cols,{search:['Description','CostType','SourceID','SupplierName'],searchPlaceholder:'Tìm nội dung, loại chi phí, chứng từ...',selects:[{field:'CostType',label:'Loại chi phí'},{field:'MachineID',label:'Máy'},{field:'Status',label:'Trạng thái'}],dateField:'CostDate',action:btnPrimary('Thêm chi phí','openCostV207()','add_card'),empty:'Chưa có dữ liệu chi phí.'});};
+V223_IMPL["saveCostV207__21288"] = async function(id){const r=await gas('saveProjectCost',id,{MachineID:amcvnVal('costMachine'),CostDate:amcvnVal('costDate'),CostType:amcvnVal('costType'),BudgetAmount:amcvnVal('costBudget'),ActualAmount:amcvnVal('costActual'),Description:amcvnVal('costDesc'),SourceType:amcvnVal('costSource'),SourceID:amcvnVal('costSourceId'),Status:amcvnVal('costStatus'),Notes:amcvnVal('costNotes')});if(!r||!r.success)return toast(r&&r.message||'Không lưu được','error');closeModal();toast(r.message);renderCostsV207();};
+V223_IMPL["saveDocumentV207__21339"] = async function(id){if(!OPS_DOC_RETURN_MACHINE_V208)return saveDocumentV208Base(id);const mid=OPS_DOC_RETURN_MACHINE_V208,r=await gas('saveEngineeringDocument',id,{MachineID:amcvnVal('docMachine')||mid,DocumentType:amcvnVal('docType'),DocumentNo:amcvnVal('docNo'),Title:amcvnVal('docTitle'),Revision:amcvnVal('docRev'),Status:amcvnVal('docStatus'),BOMVersionID:amcvnVal('docBom'),ECNNo:amcvnVal('docEcn'),DriveUrl:amcvnVal('docUrl'),Owner:amcvnVal('docOwner'),Reviewer:amcvnVal('docReviewer'),Approver:amcvnVal('docApprover'),Notes:amcvnVal('docNotes')});if(!r||!r.success)return toast(r&&r.message||'Không lưu được','error');toast(r.message);closeModal();OPS_DOC_RETURN_MACHINE_V208=mid;openBOMDocumentsV208();};
+V223_IMPL["saveProcessInspectionV209__21439"] = async function(type){setSaving(true);try{const r=await gas('saveProcessInspection','',{InspectionType:type,MachineID:amcvnVal('qiMachine'),ModuleID:amcvnVal('qiModule'),CheckItem:amcvnVal('qiItem'),AcceptanceCriteria:amcvnVal('qiCriteria'),QuantityChecked:amcvnVal('qiChecked'),QuantityPassed:amcvnVal('qiPassed'),QuantityRejected:amcvnVal('qiRejected'),Result:amcvnVal('qiResult'),NCRNo:amcvnVal('qiNcr'),EvidenceUrl:amcvnVal('qiEvidence'),Notes:amcvnVal('qiNotes')});if(!r||!r.success)throw new Error(r&&r.message||'Không lưu được');closeModal();toast(r.message);if(type==='FQC'||type==='OQC')renderQualityFinalV209();else renderQualityInspectionV209(type);}catch(e){toast(e.message,'error');}finally{setSaving(false);}};
+V223_IMPL["openMachineMaterials__22128"] = async function(machineId){return openMachineMaterialsPagedV224(machineId);};
+V223_INSTALLED["production"] = "v20.24-969a11832328";

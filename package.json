@@ -1,0 +1,19 @@
+{
+  "name": "amcvn-minierp",
+  "version": "20.24.0",
+  "private": true,
+  "description": "AMCVN Google Apps Script canonical source",
+  "scripts": {
+    "check": "node tools/check.cjs",
+    "index": "node tools/index-code.cjs",
+    "test:server": "node tests/server.cjs",
+    "test:browser": "node tests/browser.cjs",
+    "package": "node tools/package.cjs",
+    "test:model": "node tests/data-model.cjs",
+    "test:pages": "node tests/pages.cjs",
+    "test": "npm run check && npm run test:server && npm run test:model && npm run test:pages"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

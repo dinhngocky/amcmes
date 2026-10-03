@@ -1,0 +1,2913 @@
+{
+  "build": "v20.24-969a11832328",
+  "source": {
+    "htmlBytes": 1908367,
+    "serverBytes": 1465527,
+    "htmlSha256": "d5ff963a852aaa5b6c119c070294ff4223d0ba393d260bcf531799b82e1e1284",
+    "serverSha256": "2fdb06fb8b916e328339eb5c6a1ae8c52a84828c1875a2ba8acc5fc1e66afd33"
+  },
+  "entryBytes": 1382703,
+  "entryReductionPercent": null,
+  "bundles": {
+    "supply": {
+      "bytes": 108415,
+      "sha256": "27d1122e680fd647f159742a895c49502cd58eb24543e2d90d300d391313d412"
+    },
+    "warehouse": {
+      "bytes": 135782,
+      "sha256": "126183cccc0c5086a4bcced7c33ead88cecb4345b0a9de874c0cefcb442994b3"
+    },
+    "production": {
+      "bytes": 143959,
+      "sha256": "470aec3d42fd936591e7444e01f4d0fa1c1a2387977c89e1ad3e8b99d1e6b483"
+    },
+    "quality": {
+      "bytes": 25046,
+      "sha256": "e4fcac97e662aae49cf0c11db9ca2565ca75d7bbe93e3c467472a6d6a8da4138"
+    },
+    "extended": {
+      "bytes": 194770,
+      "sha256": "69489a9151e5163ba22ca7dbe2ff8de813afa4ebe0af19791c61f32c5591ece4"
+    }
+  },
+  "functions": [
+    {
+      "name": "renderInventoryTab",
+      "key": "renderInventoryTab__2626",
+      "group": "warehouse",
+      "line": 2626,
+      "bytes": 8507
+    },
+    {
+      "name": "renderProductionTab",
+      "key": "renderProductionTab__2769",
+      "group": "production",
+      "line": 2769,
+      "bytes": 13538
+    },
+    {
+      "name": "applySalesPriceFormulaToLine_",
+      "key": "applySalesPriceFormulaToLine___3220",
+      "group": "extended",
+      "line": 3220,
+      "bytes": 1154
+    },
+    {
+      "name": "addLineProduct",
+      "key": "addLineProduct__3263",
+      "group": "warehouse",
+      "line": 3263,
+      "bytes": 1287
+    },
+    {
+      "name": "quickProductSave",
+      "key": "quickProductSave__3329",
+      "group": "warehouse",
+      "line": 3329,
+      "bytes": 1648
+    },
+    {
+      "name": "openBOMModal",
+      "key": "openBOMModal__3378",
+      "group": "supply",
+      "line": 3378,
+      "bytes": 3462
+    },
+    {
+      "name": "saveBOM",
+      "key": "saveBOM__3514",
+      "group": "supply",
+      "line": 3514,
+      "bytes": 1495
+    },
+    {
+      "name": "deleteBOM",
+      "key": "deleteBOM__3595",
+      "group": "supply",
+      "line": 3595,
+      "bytes": 352
+    },
+    {
+      "name": "openProductionModal",
+      "key": "openProductionModal__3609",
+      "group": "production",
+      "line": 3609,
+      "bytes": 3188
+    },
+    {
+      "name": "saveProduction",
+      "key": "saveProduction__3650",
+      "group": "production",
+      "line": 3650,
+      "bytes": 1180
+    },
+    {
+      "name": "openCompleteProductionModal",
+      "key": "openCompleteProductionModal__3660",
+      "group": "production",
+      "line": 3660,
+      "bytes": 5681
+    },
+    {
+      "name": "saveCompleteProduction",
+      "key": "saveCompleteProduction__3753",
+      "group": "production",
+      "line": 3753,
+      "bytes": 845
+    },
+    {
+      "name": "prodProductChanged",
+      "key": "prodProductChanged__3766",
+      "group": "warehouse",
+      "line": 3766,
+      "bytes": 509
+    },
+    {
+      "name": "startProductionOrder",
+      "key": "startProductionOrder__3840",
+      "group": "production",
+      "line": 3840,
+      "bytes": 447
+    },
+    {
+      "name": "openProductionProgressModal",
+      "key": "openProductionProgressModal__3847",
+      "group": "production",
+      "line": 3847,
+      "bytes": 2286
+    },
+    {
+      "name": "saveProductionProgress",
+      "key": "saveProductionProgress__3862",
+      "group": "production",
+      "line": 3862,
+      "bytes": 869
+    },
+    {
+      "name": "viewProduction",
+      "key": "viewProduction__3878",
+      "group": "production",
+      "line": 3878,
+      "bytes": 4953
+    },
+    {
+      "name": "renderProjectsTab",
+      "key": "renderProjectsTab__3936",
+      "group": "production",
+      "line": 3936,
+      "bytes": 1761
+    },
+    {
+      "name": "openProjectDetail",
+      "key": "openProjectDetail__3962",
+      "group": "production",
+      "line": 3962,
+      "bytes": 2126
+    },
+    {
+      "name": "openMachineDetail",
+      "key": "openMachineDetail__3986",
+      "group": "production",
+      "line": 3986,
+      "bytes": 4113
+    },
+    {
+      "name": "openProjectForm",
+      "key": "openProjectForm__4017",
+      "group": "production",
+      "line": 4017,
+      "bytes": 2435
+    },
+    {
+      "name": "saveProjectFromForm",
+      "key": "saveProjectFromForm__4035",
+      "group": "production",
+      "line": 4035,
+      "bytes": 75
+    },
+    {
+      "name": "saveProject",
+      "key": "saveProject__4038",
+      "group": "production",
+      "line": 4038,
+      "bytes": 785
+    },
+    {
+      "name": "openMachineForm",
+      "key": "openMachineForm__4045",
+      "group": "production",
+      "line": 4045,
+      "bytes": 2492
+    },
+    {
+      "name": "saveMachine",
+      "key": "saveMachine__4060",
+      "group": "production",
+      "line": 4060,
+      "bytes": 848
+    },
+    {
+      "name": "openModuleForm",
+      "key": "openModuleForm__4067",
+      "group": "supply",
+      "line": 4067,
+      "bytes": 1885
+    },
+    {
+      "name": "saveModule",
+      "key": "saveModule__4079",
+      "group": "supply",
+      "line": 4079,
+      "bytes": 686
+    },
+    {
+      "name": "openMachineBOM",
+      "key": "openMachineBOM__4119",
+      "group": "production",
+      "line": 4119,
+      "bytes": 1305
+    },
+    {
+      "name": "saveMachineBOMVersion",
+      "key": "saveMachineBOMVersion__4246",
+      "group": "production",
+      "line": 4246,
+      "bytes": 429
+    },
+    {
+      "name": "deleteMachineBOMVersion",
+      "key": "deleteMachineBOMVersion__4251",
+      "group": "production",
+      "line": 4251,
+      "bytes": 387
+    },
+    {
+      "name": "openMachineBOMLineForm",
+      "key": "openMachineBOMLineForm__4256",
+      "group": "production",
+      "line": 4256,
+      "bytes": 2429
+    },
+    {
+      "name": "saveMachineBOMLine",
+      "key": "saveMachineBOMLine__4276",
+      "group": "production",
+      "line": 4276,
+      "bytes": 1140
+    },
+    {
+      "name": "deleteMachineBOMLine",
+      "key": "deleteMachineBOMLine__4290",
+      "group": "production",
+      "line": 4290,
+      "bytes": 519
+    },
+    {
+      "name": "loadMachineBOMHistory",
+      "key": "loadMachineBOMHistory__4308",
+      "group": "production",
+      "line": 4308,
+      "bytes": 376
+    },
+    {
+      "name": "renderBOMManagement",
+      "key": "renderBOMManagement__4336",
+      "group": "supply",
+      "line": 4336,
+      "bytes": 1423
+    },
+    {
+      "name": "readMachineBOMWorkbook",
+      "key": "readMachineBOMWorkbook__4363",
+      "group": "production",
+      "line": 4363,
+      "bytes": 606
+    },
+    {
+      "name": "previewMachineBOMFile",
+      "key": "previewMachineBOMFile__4377",
+      "group": "production",
+      "line": 4377,
+      "bytes": 992
+    },
+    {
+      "name": "checkMachineBOMImport",
+      "key": "checkMachineBOMImport__4402",
+      "group": "production",
+      "line": 4402,
+      "bytes": 1529
+    },
+    {
+      "name": "importMachineBOMExcel",
+      "key": "importMachineBOMExcel__4422",
+      "group": "production",
+      "line": 4422,
+      "bytes": 1270
+    },
+    {
+      "name": "releaseMachineBOM",
+      "key": "releaseMachineBOM__4456",
+      "group": "production",
+      "line": 4456,
+      "bytes": 694
+    },
+    {
+      "name": "compareMachineBOMNow",
+      "key": "compareMachineBOMNow__4468",
+      "group": "production",
+      "line": 4468,
+      "bytes": 608
+    },
+    {
+      "name": "renderAssemblyDashboardTab",
+      "key": "renderAssemblyDashboardTab__4485",
+      "group": "production",
+      "line": 4485,
+      "bytes": 1836
+    },
+    {
+      "name": "openMachineExecution",
+      "key": "openMachineExecution__4507",
+      "group": "production",
+      "line": 4507,
+      "bytes": 5583
+    },
+    {
+      "name": "saveMachineStage",
+      "key": "saveMachineStage__4567",
+      "group": "production",
+      "line": 4567,
+      "bytes": 665
+    },
+    {
+      "name": "openMachineAssignmentForm",
+      "key": "openMachineAssignmentForm__4572",
+      "group": "production",
+      "line": 4572,
+      "bytes": 1369
+    },
+    {
+      "name": "saveMachineAssignment",
+      "key": "saveMachineAssignment__4581",
+      "group": "production",
+      "line": 4581,
+      "bytes": 798
+    },
+    {
+      "name": "saveMachineIssue",
+      "key": "saveMachineIssue__4596",
+      "group": "production",
+      "line": 4596,
+      "bytes": 638
+    },
+    {
+      "name": "loadQualityFATDashboard",
+      "key": "loadQualityFATDashboard__4621",
+      "group": "quality",
+      "line": 4621,
+      "bytes": 268
+    },
+    {
+      "name": "renderQualityTab",
+      "key": "renderQualityTab__4626",
+      "group": "quality",
+      "line": 4626,
+      "bytes": 3890
+    },
+    {
+      "name": "openMachineQuality",
+      "key": "openMachineQuality__4658",
+      "group": "production",
+      "line": 4658,
+      "bytes": 5556
+    },
+    {
+      "name": "saveQualityIssue",
+      "key": "saveQualityIssue__4687",
+      "group": "quality",
+      "line": 4687,
+      "bytes": 738
+    },
+    {
+      "name": "saveFATCheck",
+      "key": "saveFATCheck__4693",
+      "group": "quality",
+      "line": 4693,
+      "bytes": 542
+    },
+    {
+      "name": "saveFATPunch",
+      "key": "saveFATPunch__4699",
+      "group": "quality",
+      "line": 4699,
+      "bytes": 536
+    },
+    {
+      "name": "deleteQualityRecord",
+      "key": "deleteQualityRecord__4701",
+      "group": "quality",
+      "line": 4701,
+      "bytes": 331
+    },
+    {
+      "name": "loadMaterialDashboard",
+      "key": "loadMaterialDashboard__4713",
+      "group": "supply",
+      "line": 4713,
+      "bytes": 291
+    },
+    {
+      "name": "renderMaterialControlTab",
+      "key": "renderMaterialControlTab__4719",
+      "group": "supply",
+      "line": 4719,
+      "bytes": 2893
+    },
+    {
+      "name": "openMachineMaterials",
+      "key": "openMachineMaterials__4741",
+      "group": "production",
+      "line": 4741,
+      "bytes": 2903
+    },
+    {
+      "name": "refreshMachineMaterials",
+      "key": "refreshMachineMaterials__4760",
+      "group": "production",
+      "line": 4760,
+      "bytes": 289
+    },
+    {
+      "name": "openMaterialRequirement",
+      "key": "openMaterialRequirement__4764",
+      "group": "supply",
+      "line": 4764,
+      "bytes": 86
+    },
+    {
+      "name": "openMaterialRequirementForm",
+      "key": "openMaterialRequirementForm__4765",
+      "group": "supply",
+      "line": 4765,
+      "bytes": 3362
+    },
+    {
+      "name": "saveMaterialRequirement",
+      "key": "saveMaterialRequirement__4784",
+      "group": "supply",
+      "line": 4784,
+      "bytes": 878
+    },
+    {
+      "name": "deleteMaterialRequirementUI",
+      "key": "deleteMaterialRequirementUI__4796",
+      "group": "supply",
+      "line": 4796,
+      "bytes": 281
+    },
+    {
+      "name": "openMaterialExceptionForm",
+      "key": "openMaterialExceptionForm__4801",
+      "group": "supply",
+      "line": 4801,
+      "bytes": 1311
+    },
+    {
+      "name": "saveMaterialException",
+      "key": "saveMaterialException__4810",
+      "group": "supply",
+      "line": 4810,
+      "bytes": 677
+    },
+    {
+      "name": "loadWarehouseOps",
+      "key": "loadWarehouseOps__4819",
+      "group": "warehouse",
+      "line": 4819,
+      "bytes": 293
+    },
+    {
+      "name": "renderWarehouseOpsTab",
+      "key": "renderWarehouseOpsTab__4834",
+      "group": "warehouse",
+      "line": 4834,
+      "bytes": 4874
+    },
+    {
+      "name": "warehouseOpsOptions",
+      "key": "warehouseOpsOptions__4884",
+      "group": "warehouse",
+      "line": 4884,
+      "bytes": 223
+    },
+    {
+      "name": "openWarehouseReceiptForm",
+      "key": "openWarehouseReceiptForm__4888",
+      "group": "warehouse",
+      "line": 4888,
+      "bytes": 2411
+    },
+    {
+      "name": "saveWarehouseReceipt",
+      "key": "saveWarehouseReceipt__4919",
+      "group": "warehouse",
+      "line": 4919,
+      "bytes": 897
+    },
+    {
+      "name": "openWarehouseReceiptDetail",
+      "key": "openWarehouseReceiptDetail__4926",
+      "group": "warehouse",
+      "line": 4926,
+      "bytes": 1953
+    },
+    {
+      "name": "openWarehouseIQCForm",
+      "key": "openWarehouseIQCForm__4934",
+      "group": "warehouse",
+      "line": 4934,
+      "bytes": 1690
+    },
+    {
+      "name": "saveWarehouseIQC",
+      "key": "saveWarehouseIQC__4945",
+      "group": "warehouse",
+      "line": 4945,
+      "bytes": 923
+    },
+    {
+      "name": "openMaterialKitForm",
+      "key": "openMaterialKitForm__4954",
+      "group": "warehouse",
+      "line": 4954,
+      "bytes": 1213
+    },
+    {
+      "name": "saveMaterialKit",
+      "key": "saveMaterialKit__4969",
+      "group": "warehouse",
+      "line": 4969,
+      "bytes": 403
+    },
+    {
+      "name": "openMaterialKitDetail",
+      "key": "openMaterialKitDetail__4974",
+      "group": "warehouse",
+      "line": 4974,
+      "bytes": 2532
+    },
+    {
+      "name": "saveMaterialKitPicking",
+      "key": "saveMaterialKitPicking__4985",
+      "group": "warehouse",
+      "line": 4985,
+      "bytes": 449
+    },
+    {
+      "name": "releaseMaterialKitNow",
+      "key": "releaseMaterialKitNow__4996",
+      "group": "warehouse",
+      "line": 4996,
+      "bytes": 345
+    },
+    {
+      "name": "renderPurchasingTab",
+      "key": "renderPurchasingTab__5001",
+      "group": "supply",
+      "line": 5001,
+      "bytes": 5281
+    },
+    {
+      "name": "renderSalesTab",
+      "key": "renderSalesTab__5099",
+      "group": "extended",
+      "line": 5099,
+      "bytes": 6718
+    },
+    {
+      "name": "renderDebtTab",
+      "key": "renderDebtTab__5207",
+      "group": "extended",
+      "line": 5207,
+      "bytes": 7233
+    },
+    {
+      "name": "renderReportsTab",
+      "key": "renderReportsTab__5288",
+      "group": "extended",
+      "line": 5288,
+      "bytes": 657
+    },
+    {
+      "name": "doExport",
+      "key": "doExport__5380",
+      "group": "extended",
+      "line": 5380,
+      "bytes": 765
+    },
+    {
+      "name": "renderSettings",
+      "key": "renderSettings__5404",
+      "group": "extended",
+      "line": 5404,
+      "bytes": 1600
+    },
+    {
+      "name": "runSchemaUpgrade",
+      "key": "runSchemaUpgrade__5428",
+      "group": "extended",
+      "line": 5428,
+      "bytes": 170
+    },
+    {
+      "name": "runReconcile",
+      "key": "runReconcile__5433",
+      "group": "extended",
+      "line": 5433,
+      "bytes": 267
+    },
+    {
+      "name": "runBackup",
+      "key": "runBackup__5434",
+      "group": "extended",
+      "line": 5434,
+      "bytes": 161
+    },
+    {
+      "name": "runBackupSchedule",
+      "key": "runBackupSchedule__5435",
+      "group": "extended",
+      "line": 5435,
+      "bytes": 203
+    },
+    {
+      "name": "saveAllSettings",
+      "key": "saveAllSettings__5436",
+      "group": "extended",
+      "line": 5436,
+      "bytes": 1591
+    },
+    {
+      "name": "ensureFinanceData",
+      "key": "ensureFinanceData__5499",
+      "group": "extended",
+      "line": 5499,
+      "bytes": 904
+    },
+    {
+      "name": "ensureFinanceModalData",
+      "key": "ensureFinanceModalData__5531",
+      "group": "extended",
+      "line": 5531,
+      "bytes": 545
+    },
+    {
+      "name": "afterFinanceChange",
+      "key": "afterFinanceChange__5677",
+      "group": "extended",
+      "line": 5677,
+      "bytes": 355
+    },
+    {
+      "name": "runFinanceReconcile",
+      "key": "runFinanceReconcile__5719",
+      "group": "extended",
+      "line": 5719,
+      "bytes": 311
+    },
+    {
+      "name": "renderFinanceTab",
+      "key": "renderFinanceTab__5743",
+      "group": "extended",
+      "line": 5743,
+      "bytes": 1645
+    },
+    {
+      "name": "financeRepair",
+      "key": "financeRepair__5801",
+      "group": "extended",
+      "line": 5801,
+      "bytes": 374
+    },
+    {
+      "name": "financeDiagnose",
+      "key": "financeDiagnose__5807",
+      "group": "extended",
+      "line": 5807,
+      "bytes": 1363
+    },
+    {
+      "name": "confirmRepairFinanceDuplicates",
+      "key": "confirmRepairFinanceDuplicates__5822",
+      "group": "extended",
+      "line": 5822,
+      "bytes": 1502
+    },
+    {
+      "name": "saveFinanceTransaction",
+      "key": "saveFinanceTransaction__6046",
+      "group": "extended",
+      "line": 6046,
+      "bytes": 2450
+    },
+    {
+      "name": "confirmCancelFinanceTx",
+      "key": "confirmCancelFinanceTx__6087",
+      "group": "extended",
+      "line": 6087,
+      "bytes": 1368
+    },
+    {
+      "name": "saveCashAccount",
+      "key": "saveCashAccount__6152",
+      "group": "extended",
+      "line": 6152,
+      "bytes": 1559
+    },
+    {
+      "name": "viewFinanceTransaction",
+      "key": "viewFinanceTransaction__6169",
+      "group": "extended",
+      "line": 6169,
+      "bytes": 5314
+    },
+    {
+      "name": "confirmDeleteFinanceTx",
+      "key": "confirmDeleteFinanceTx__6204",
+      "group": "extended",
+      "line": 6204,
+      "bytes": 1220
+    },
+    {
+      "name": "viewCashAccount",
+      "key": "viewCashAccount__6223",
+      "group": "extended",
+      "line": 6223,
+      "bytes": 4806
+    },
+    {
+      "name": "confirmDeleteCashAccount",
+      "key": "confirmDeleteCashAccount__6311",
+      "group": "extended",
+      "line": 6311,
+      "bytes": 1497
+    },
+    {
+      "name": "viewBudget",
+      "key": "viewBudget__6329",
+      "group": "extended",
+      "line": 6329,
+      "bytes": 3850
+    },
+    {
+      "name": "confirmDeleteBudget",
+      "key": "confirmDeleteBudget__6364",
+      "group": "extended",
+      "line": 6364,
+      "bytes": 1158
+    },
+    {
+      "name": "saveBudget",
+      "key": "saveBudget__6385",
+      "group": "extended",
+      "line": 6385,
+      "bytes": 592
+    },
+    {
+      "name": "ftBulkDeleteConfirm",
+      "key": "ftBulkDeleteConfirm__6617",
+      "group": "extended",
+      "line": 6617,
+      "bytes": 1327
+    },
+    {
+      "name": "saveProduct",
+      "key": "saveProduct__6693",
+      "group": "warehouse",
+      "line": 6693,
+      "bytes": 1870
+    },
+    {
+      "name": "impFileToAoa",
+      "key": "impFileToAoa__7123",
+      "group": "extended",
+      "line": 7123,
+      "bytes": 867
+    },
+    {
+      "name": "impFillColumnPrompt",
+      "key": "impFillColumnPrompt__7344",
+      "group": "extended",
+      "line": 7344,
+      "bytes": 314
+    },
+    {
+      "name": "impSubmit",
+      "key": "impSubmit__7714",
+      "group": "extended",
+      "line": 7714,
+      "bytes": 1455
+    },
+    {
+      "name": "impSendChunked",
+      "key": "impSendChunked__7751",
+      "group": "extended",
+      "line": 7751,
+      "bytes": 1899
+    },
+    {
+      "name": "bimpAddFiles",
+      "key": "bimpAddFiles__7815",
+      "group": "extended",
+      "line": 7815,
+      "bytes": 1689
+    },
+    {
+      "name": "bimpRun",
+      "key": "bimpRun__7901",
+      "group": "extended",
+      "line": 7901,
+      "bytes": 5964
+    },
+    {
+      "name": "openingDebtLoad",
+      "key": "openingDebtLoad__8052",
+      "group": "extended",
+      "line": 8052,
+      "bytes": 407
+    },
+    {
+      "name": "saveCustomer",
+      "key": "saveCustomer__8062",
+      "group": "extended",
+      "line": 8062,
+      "bytes": 824
+    },
+    {
+      "name": "saveSupplier",
+      "key": "saveSupplier__8090",
+      "group": "supply",
+      "line": 8090,
+      "bytes": 959
+    },
+    {
+      "name": "openSalesModal",
+      "key": "openSalesModal__8540",
+      "group": "extended",
+      "line": 8540,
+      "bytes": 3105
+    },
+    {
+      "name": "pickerQuickSave",
+      "key": "pickerQuickSave__8672",
+      "group": "extended",
+      "line": 8672,
+      "bytes": 1437
+    },
+    {
+      "name": "saveSales",
+      "key": "saveSales__8718",
+      "group": "extended",
+      "line": 8718,
+      "bytes": 2085
+    },
+    {
+      "name": "openPurchaseModal",
+      "key": "openPurchaseModal__8808",
+      "group": "supply",
+      "line": 8808,
+      "bytes": 3662
+    },
+    {
+      "name": "savePurchase",
+      "key": "savePurchase__8861",
+      "group": "supply",
+      "line": 8861,
+      "bytes": 1987
+    },
+    {
+      "name": "openQuoteModal",
+      "key": "openQuoteModal__8889",
+      "group": "extended",
+      "line": 8889,
+      "bytes": 2270
+    },
+    {
+      "name": "saveQuote",
+      "key": "saveQuote__8912",
+      "group": "extended",
+      "line": 8912,
+      "bytes": 1105
+    },
+    {
+      "name": "convertQuote",
+      "key": "convertQuote__8926",
+      "group": "extended",
+      "line": 8926,
+      "bytes": 372
+    },
+    {
+      "name": "viewQuote",
+      "key": "viewQuote__8934",
+      "group": "extended",
+      "line": 8934,
+      "bytes": 1915
+    },
+    {
+      "name": "openStockModal",
+      "key": "openStockModal__8953",
+      "group": "warehouse",
+      "line": 8953,
+      "bytes": 1893
+    },
+    {
+      "name": "saveStock",
+      "key": "saveStock__8972",
+      "group": "warehouse",
+      "line": 8972,
+      "bytes": 529
+    },
+    {
+      "name": "openInventoryCheckModal",
+      "key": "openInventoryCheckModal__8980",
+      "group": "warehouse",
+      "line": 8980,
+      "bytes": 1724
+    },
+    {
+      "name": "saveInventoryCheck",
+      "key": "saveInventoryCheck__8998",
+      "group": "warehouse",
+      "line": 8998,
+      "bytes": 473
+    },
+    {
+      "name": "viewInventoryCheck",
+      "key": "viewInventoryCheck__9004",
+      "group": "warehouse",
+      "line": 9004,
+      "bytes": 3445
+    },
+    {
+      "name": "openPaymentModal",
+      "key": "openPaymentModal__9078",
+      "group": "extended",
+      "line": 9078,
+      "bytes": 1691
+    },
+    {
+      "name": "payRefreshRemaining",
+      "key": "payRefreshRemaining__9099",
+      "group": "extended",
+      "line": 9099,
+      "bytes": 1119
+    },
+    {
+      "name": "payBillOcr",
+      "key": "payBillOcr__9227",
+      "group": "extended",
+      "line": 9227,
+      "bytes": 2569
+    },
+    {
+      "name": "savePayment",
+      "key": "savePayment__9267",
+      "group": "extended",
+      "line": 9267,
+      "bytes": 681
+    },
+    {
+      "name": "doSavePayment",
+      "key": "doSavePayment__9276",
+      "group": "extended",
+      "line": 9276,
+      "bytes": 815
+    },
+    {
+      "name": "openReturnModal",
+      "key": "openReturnModal__9290",
+      "group": "extended",
+      "line": 9290,
+      "bytes": 2717
+    },
+    {
+      "name": "rtLoadInvoice",
+      "key": "rtLoadInvoice__9348",
+      "group": "extended",
+      "line": 9348,
+      "bytes": 1686
+    },
+    {
+      "name": "rtDebtCheck",
+      "key": "rtDebtCheck__9367",
+      "group": "extended",
+      "line": 9367,
+      "bytes": 1531
+    },
+    {
+      "name": "saveReturn",
+      "key": "saveReturn__9396",
+      "group": "extended",
+      "line": 9396,
+      "bytes": 899
+    },
+    {
+      "name": "viewReturn",
+      "key": "viewReturn__9409",
+      "group": "extended",
+      "line": 9409,
+      "bytes": 1992
+    },
+    {
+      "name": "doReturnRefund",
+      "key": "doReturnRefund__9440",
+      "group": "extended",
+      "line": 9440,
+      "bytes": 340
+    },
+    {
+      "name": "openPartyCashModal",
+      "key": "openPartyCashModal__9452",
+      "group": "extended",
+      "line": 9452,
+      "bytes": 3655
+    },
+    {
+      "name": "partyCashObjectChanged",
+      "key": "partyCashObjectChanged__9477",
+      "group": "extended",
+      "line": 9477,
+      "bytes": 876
+    },
+    {
+      "name": "savePartyCash",
+      "key": "savePartyCash__9506",
+      "group": "extended",
+      "line": 9506,
+      "bytes": 948
+    },
+    {
+      "name": "doSavePartyCash",
+      "key": "doSavePartyCash__9517",
+      "group": "extended",
+      "line": 9517,
+      "bytes": 1053
+    },
+    {
+      "name": "openAllocModal",
+      "key": "openAllocModal__9533",
+      "group": "extended",
+      "line": 9533,
+      "bytes": 2812
+    },
+    {
+      "name": "allocLoadDocs",
+      "key": "allocLoadDocs__9559",
+      "group": "extended",
+      "line": 9559,
+      "bytes": 1988
+    },
+    {
+      "name": "allocSubmit",
+      "key": "allocSubmit__9582",
+      "group": "extended",
+      "line": 9582,
+      "bytes": 1078
+    },
+    {
+      "name": "doAllocSubmit",
+      "key": "doAllocSubmit__9596",
+      "group": "extended",
+      "line": 9596,
+      "bytes": 875
+    },
+    {
+      "name": "saveUser",
+      "key": "saveUser__9614",
+      "group": "extended",
+      "line": 9614,
+      "bytes": 320
+    },
+    {
+      "name": "viewPayment",
+      "key": "viewPayment__9693",
+      "group": "extended",
+      "line": 9693,
+      "bytes": 2854
+    },
+    {
+      "name": "viewSales",
+      "key": "viewSales__9712",
+      "group": "extended",
+      "line": 9712,
+      "bytes": 4378
+    },
+    {
+      "name": "openReturnForInvoice",
+      "key": "openReturnForInvoice__9760",
+      "group": "extended",
+      "line": 9760,
+      "bytes": 715
+    },
+    {
+      "name": "lockSales",
+      "key": "lockSales__9770",
+      "group": "extended",
+      "line": 9770,
+      "bytes": 404
+    },
+    {
+      "name": "viewPurchase",
+      "key": "viewPurchase__9776",
+      "group": "supply",
+      "line": 9776,
+      "bytes": 1622
+    },
+    {
+      "name": "doChangePassword",
+      "key": "doChangePassword__10039",
+      "group": "extended",
+      "line": 10039,
+      "bytes": 640
+    },
+    {
+      "name": "saveProfile",
+      "key": "saveProfile__10069",
+      "group": "extended",
+      "line": 10069,
+      "bytes": 504
+    },
+    {
+      "name": "loadReminderUI",
+      "key": "loadReminderUI__10139",
+      "group": "extended",
+      "line": 10139,
+      "bytes": 1027
+    },
+    {
+      "name": "saveReminder",
+      "key": "saveReminder__10151",
+      "group": "extended",
+      "line": 10151,
+      "bytes": 355
+    },
+    {
+      "name": "testReminder",
+      "key": "testReminder__10157",
+      "group": "extended",
+      "line": 10157,
+      "bytes": 179
+    },
+    {
+      "name": "openCustomerReminderModal",
+      "key": "openCustomerReminderModal__10160",
+      "group": "extended",
+      "line": 10160,
+      "bytes": 2216
+    },
+    {
+      "name": "sendSelectedCustomerReminders",
+      "key": "sendSelectedCustomerReminders__10198",
+      "group": "extended",
+      "line": 10198,
+      "bytes": 412
+    },
+    {
+      "name": "openDocModal",
+      "key": "openDocModal__10259",
+      "group": "extended",
+      "line": 10259,
+      "bytes": 7602
+    },
+    {
+      "name": "docLoadQr",
+      "key": "docLoadQr__10328",
+      "group": "extended",
+      "line": 10328,
+      "bytes": 646
+    },
+    {
+      "name": "docQrChanged",
+      "key": "docQrChanged__10350",
+      "group": "extended",
+      "line": 10350,
+      "bytes": 221
+    },
+    {
+      "name": "docPdf",
+      "key": "docPdf__10385",
+      "group": "extended",
+      "line": 10385,
+      "bytes": 356
+    },
+    {
+      "name": "docEmail",
+      "key": "docEmail__10386",
+      "group": "extended",
+      "line": 10386,
+      "bytes": 401
+    },
+    {
+      "name": "renderFormulasTab",
+      "key": "renderFormulasTab__10414",
+      "group": "extended",
+      "line": 10414,
+      "bytes": 3132
+    },
+    {
+      "name": "openPriceFormulaModal",
+      "key": "openPriceFormulaModal__10457",
+      "group": "extended",
+      "line": 10457,
+      "bytes": 2964
+    },
+    {
+      "name": "pfPreview",
+      "key": "pfPreview__10555",
+      "group": "extended",
+      "line": 10555,
+      "bytes": 1096
+    },
+    {
+      "name": "savePriceFormula",
+      "key": "savePriceFormula__10569",
+      "group": "extended",
+      "line": 10569,
+      "bytes": 553
+    },
+    {
+      "name": "openCostFormulaModal",
+      "key": "openCostFormulaModal__10590",
+      "group": "extended",
+      "line": 10590,
+      "bytes": 3056
+    },
+    {
+      "name": "cfCalc",
+      "key": "cfCalc__10672",
+      "group": "extended",
+      "line": 10672,
+      "bytes": 1473
+    },
+    {
+      "name": "saveCostFormula",
+      "key": "saveCostFormula__10689",
+      "group": "extended",
+      "line": 10689,
+      "bytes": 1303
+    },
+    {
+      "name": "prodFormulaPreview",
+      "key": "prodFormulaPreview__10716",
+      "group": "extended",
+      "line": 10716,
+      "bytes": 7186
+    },
+    {
+      "name": "loadProductionPricing",
+      "key": "loadProductionPricing__10844",
+      "group": "production",
+      "line": 10844,
+      "bytes": 475
+    },
+    {
+      "name": "saveProductionPricingAll",
+      "key": "saveProductionPricingAll__10923",
+      "group": "production",
+      "line": 10923,
+      "bytes": 1388
+    },
+    {
+      "name": "proToggleHints",
+      "key": "proToggleHints__11309",
+      "group": "extended",
+      "line": 11309,
+      "bytes": 691
+    },
+    {
+      "name": "renderPurchaseReturnsTab",
+      "key": "renderPurchaseReturnsTab__11609",
+      "group": "supply",
+      "line": 11609,
+      "bytes": 2365
+    },
+    {
+      "name": "openPurchaseReturnModal",
+      "key": "openPurchaseReturnModal__11642",
+      "group": "supply",
+      "line": 11642,
+      "bytes": 3851
+    },
+    {
+      "name": "pretPickPurchase",
+      "key": "pretPickPurchase__11728",
+      "group": "supply",
+      "line": 11728,
+      "bytes": 819
+    },
+    {
+      "name": "pretLoadRemain",
+      "key": "pretLoadRemain__11751",
+      "group": "supply",
+      "line": 11751,
+      "bytes": 293
+    },
+    {
+      "name": "pretSave",
+      "key": "pretSave__11837",
+      "group": "supply",
+      "line": 11837,
+      "bytes": 1929
+    },
+    {
+      "name": "viewPurchaseReturn",
+      "key": "viewPurchaseReturn__11874",
+      "group": "supply",
+      "line": 11874,
+      "bytes": 2701
+    },
+    {
+      "name": "doPurchaseReturnRefund",
+      "key": "doPurchaseReturnRefund__11937",
+      "group": "supply",
+      "line": 11937,
+      "bytes": 374
+    },
+    {
+      "name": "cfmLoad",
+      "key": "cfmLoad__12060",
+      "group": "extended",
+      "line": 12060,
+      "bytes": 638
+    },
+    {
+      "name": "openCodeFormatModal",
+      "key": "openCodeFormatModal__12078",
+      "group": "extended",
+      "line": 12078,
+      "bytes": 417
+    },
+    {
+      "name": "cfmRenderInline",
+      "key": "cfmRenderInline__12100",
+      "group": "extended",
+      "line": 12100,
+      "bytes": 410
+    },
+    {
+      "name": "cfmSave",
+      "key": "cfmSave__12214",
+      "group": "extended",
+      "line": 12214,
+      "bytes": 716
+    },
+    {
+      "name": "cfmDoResetSeq",
+      "key": "cfmDoResetSeq__12240",
+      "group": "extended",
+      "line": 12240,
+      "bytes": 378
+    },
+    {
+      "name": "loadAccessUsers",
+      "key": "loadAccessUsers__12684",
+      "group": "extended",
+      "line": 12684,
+      "bytes": 467
+    },
+    {
+      "name": "saveUserForm",
+      "key": "saveUserForm__12854",
+      "group": "extended",
+      "line": 12854,
+      "bytes": 1059
+    },
+    {
+      "name": "saveUserPassword",
+      "key": "saveUserPassword__12887",
+      "group": "extended",
+      "line": 12887,
+      "bytes": 503
+    },
+    {
+      "name": "toggleUserLock",
+      "key": "toggleUserLock__12899",
+      "group": "extended",
+      "line": 12899,
+      "bytes": 557
+    },
+    {
+      "name": "doRemoveUser",
+      "key": "doRemoveUser__12921",
+      "group": "extended",
+      "line": 12921,
+      "bytes": 253
+    },
+    {
+      "name": "renderAuditTab",
+      "key": "renderAuditTab__12951",
+      "group": "extended",
+      "line": 12951,
+      "bytes": 273
+    },
+    {
+      "name": "loadAuditRows",
+      "key": "loadAuditRows__12999",
+      "group": "extended",
+      "line": 12999,
+      "bytes": 1282
+    },
+    {
+      "name": "whLoad",
+      "key": "whLoad__13070",
+      "group": "warehouse",
+      "line": 13070,
+      "bytes": 209
+    },
+    {
+      "name": "renderWarehouseTab",
+      "key": "renderWarehouseTab__13097",
+      "group": "warehouse",
+      "line": 13097,
+      "bytes": 501
+    },
+    {
+      "name": "whOpenProduct",
+      "key": "whOpenProduct__13188",
+      "group": "warehouse",
+      "line": 13188,
+      "bytes": 1554
+    },
+    {
+      "name": "whOpenDetail",
+      "key": "whOpenDetail__13205",
+      "group": "warehouse",
+      "line": 13205,
+      "bytes": 1661
+    },
+    {
+      "name": "whSave",
+      "key": "whSave__13250",
+      "group": "warehouse",
+      "line": 13250,
+      "bytes": 970
+    },
+    {
+      "name": "whMakeDefault",
+      "key": "whMakeDefault__13274",
+      "group": "warehouse",
+      "line": 13274,
+      "bytes": 347
+    },
+    {
+      "name": "whRemove",
+      "key": "whRemove__13282",
+      "group": "warehouse",
+      "line": 13282,
+      "bytes": 3159
+    },
+    {
+      "name": "whDoRemove",
+      "key": "whDoRemove__13316",
+      "group": "warehouse",
+      "line": 13316,
+      "bytes": 495
+    },
+    {
+      "name": "renderTransferTab",
+      "key": "renderTransferTab__13331",
+      "group": "warehouse",
+      "line": 13331,
+      "bytes": 1909
+    },
+    {
+      "name": "whOpenTransferForm",
+      "key": "whOpenTransferForm__13362",
+      "group": "warehouse",
+      "line": 13362,
+      "bytes": 2466
+    },
+    {
+      "name": "whSaveTransfer",
+      "key": "whSaveTransfer__13435",
+      "group": "warehouse",
+      "line": 13435,
+      "bytes": 1089
+    },
+    {
+      "name": "whViewTransfer",
+      "key": "whViewTransfer__13457",
+      "group": "warehouse",
+      "line": 13457,
+      "bytes": 3996
+    },
+    {
+      "name": "whReceiveTransfer",
+      "key": "whReceiveTransfer__13497",
+      "group": "warehouse",
+      "line": 13497,
+      "bytes": 92
+    },
+    {
+      "name": "whCancelTransfer",
+      "key": "whCancelTransfer__13498",
+      "group": "warehouse",
+      "line": 13498,
+      "bytes": 91
+    },
+    {
+      "name": "whDeleteTransfer",
+      "key": "whDeleteTransfer__13499",
+      "group": "warehouse",
+      "line": 13499,
+      "bytes": 91
+    },
+    {
+      "name": "renderPosTab",
+      "key": "renderPosTab__13523",
+      "group": "extended",
+      "line": 13523,
+      "bytes": 442
+    },
+    {
+      "name": "posCheckout",
+      "key": "posCheckout__13795",
+      "group": "extended",
+      "line": 13795,
+      "bytes": 1299
+    },
+    {
+      "name": "posPrintBill",
+      "key": "posPrintBill__13837",
+      "group": "extended",
+      "line": 13837,
+      "bytes": 222
+    },
+    {
+      "name": "posDoOpenShift",
+      "key": "posDoOpenShift__13860",
+      "group": "extended",
+      "line": 13860,
+      "bytes": 498
+    },
+    {
+      "name": "posCloseShiftForm",
+      "key": "posCloseShiftForm__13874",
+      "group": "extended",
+      "line": 13874,
+      "bytes": 2655
+    },
+    {
+      "name": "posDoCloseShift",
+      "key": "posDoCloseShift__13916",
+      "group": "extended",
+      "line": 13916,
+      "bytes": 434
+    },
+    {
+      "name": "renderPosShiftsTab",
+      "key": "renderPosShiftsTab__13928",
+      "group": "extended",
+      "line": 13928,
+      "bytes": 2260
+    },
+    {
+      "name": "posViewShift",
+      "key": "posViewShift__13960",
+      "group": "extended",
+      "line": 13960,
+      "bytes": 3400
+    },
+    {
+      "name": "vatWarnDuplicate",
+      "key": "vatWarnDuplicate__14063",
+      "group": "extended",
+      "line": 14063,
+      "bytes": 385
+    },
+    {
+      "name": "renderVatReportTab",
+      "key": "renderVatReportTab__14077",
+      "group": "extended",
+      "line": 14077,
+      "bytes": 424
+    },
+    {
+      "name": "loadVatReport",
+      "key": "loadVatReport__14112",
+      "group": "extended",
+      "line": 14112,
+      "bytes": 432
+    },
+    {
+      "name": "hrLoadBoot",
+      "key": "hrLoadBoot__14204",
+      "group": "extended",
+      "line": 14204,
+      "bytes": 196
+    },
+    {
+      "name": "renderHrTab",
+      "key": "renderHrTab__14211",
+      "group": "extended",
+      "line": 14211,
+      "bytes": 373
+    },
+    {
+      "name": "hrRenderDashboard",
+      "key": "hrRenderDashboard__14223",
+      "group": "extended",
+      "line": 14223,
+      "bytes": 3545
+    },
+    {
+      "name": "hrSaveEmployee",
+      "key": "hrSaveEmployee__14332",
+      "group": "extended",
+      "line": 14332,
+      "bytes": 1646
+    },
+    {
+      "name": "hrRemoveEmployee",
+      "key": "hrRemoveEmployee__14395",
+      "group": "extended",
+      "line": 14395,
+      "bytes": 328
+    },
+    {
+      "name": "hrRenderAttendance",
+      "key": "hrRenderAttendance__14406",
+      "group": "extended",
+      "line": 14406,
+      "bytes": 331
+    },
+    {
+      "name": "hrAttSave",
+      "key": "hrAttSave__14547",
+      "group": "extended",
+      "line": 14547,
+      "bytes": 886
+    },
+    {
+      "name": "hrRenderPayrolls",
+      "key": "hrRenderPayrolls__14569",
+      "group": "extended",
+      "line": 14569,
+      "bytes": 1544
+    },
+    {
+      "name": "hrSavePayroll",
+      "key": "hrSavePayroll__14610",
+      "group": "extended",
+      "line": 14610,
+      "bytes": 650
+    },
+    {
+      "name": "hrOpenPayroll",
+      "key": "hrOpenPayroll__14626",
+      "group": "extended",
+      "line": 14626,
+      "bytes": 311
+    },
+    {
+      "name": "hrSaveLine",
+      "key": "hrSaveLine__14705",
+      "group": "extended",
+      "line": 14705,
+      "bytes": 723
+    },
+    {
+      "name": "hrApprovePayroll",
+      "key": "hrApprovePayroll__14721",
+      "group": "extended",
+      "line": 14721,
+      "bytes": 288
+    },
+    {
+      "name": "hrDoPay",
+      "key": "hrDoPay__14748",
+      "group": "extended",
+      "line": 14748,
+      "bytes": 583
+    },
+    {
+      "name": "hrRemovePayroll",
+      "key": "hrRemovePayroll__14762",
+      "group": "extended",
+      "line": 14762,
+      "bytes": 307
+    },
+    {
+      "name": "hrPayslip",
+      "key": "hrPayslip__14771",
+      "group": "extended",
+      "line": 14771,
+      "bytes": 3379
+    },
+    {
+      "name": "renderStockLedgerTab",
+      "key": "renderStockLedgerTab__14975",
+      "group": "warehouse",
+      "line": 14975,
+      "bytes": 201
+    },
+    {
+      "name": "loadStockLedger",
+      "key": "loadStockLedger__15018",
+      "group": "warehouse",
+      "line": 15018,
+      "bytes": 449
+    },
+    {
+      "name": "nxtOpenCard",
+      "key": "nxtOpenCard__15064",
+      "group": "extended",
+      "line": 15064,
+      "bytes": 2814
+    },
+    {
+      "name": "savePurchaseRequisitionForm",
+      "key": "savePurchaseRequisitionForm__15151",
+      "group": "supply",
+      "line": 15151,
+      "bytes": 695
+    },
+    {
+      "name": "renderPurchaseRequisitions",
+      "key": "renderPurchaseRequisitions__15158",
+      "group": "supply",
+      "line": 15158,
+      "bytes": 1297
+    },
+    {
+      "name": "cancelRequisitionUI",
+      "key": "cancelRequisitionUI__15185",
+      "group": "supply",
+      "line": 15185,
+      "bytes": 351
+    },
+    {
+      "name": "openRequisitionPO",
+      "key": "openRequisitionPO__15186",
+      "group": "supply",
+      "line": 15186,
+      "bytes": 114
+    },
+    {
+      "name": "saveRequisitionPO",
+      "key": "saveRequisitionPO__15187",
+      "group": "supply",
+      "line": 15187,
+      "bytes": 45
+    },
+    {
+      "name": "openRequisitionReceipt",
+      "key": "openRequisitionReceipt__15188",
+      "group": "warehouse",
+      "line": 15188,
+      "bytes": 1829
+    },
+    {
+      "name": "saveRequisitionReceipt",
+      "key": "saveRequisitionReceipt__15199",
+      "group": "warehouse",
+      "line": 15199,
+      "bytes": 1178
+    },
+    {
+      "name": "procCall",
+      "key": "procCall__15221",
+      "group": "supply",
+      "line": 15221,
+      "bytes": 163
+    },
+    {
+      "name": "savePRReview",
+      "key": "savePRReview__15227",
+      "group": "supply",
+      "line": 15227,
+      "bytes": 409
+    },
+    {
+      "name": "goToRFQ",
+      "key": "goToRFQ__15228",
+      "group": "supply",
+      "line": 15228,
+      "bytes": 127
+    },
+    {
+      "name": "renderProcurement",
+      "key": "renderProcurement__15229",
+      "group": "supply",
+      "line": 15229,
+      "bytes": 1784
+    },
+    {
+      "name": "openProcRFQ",
+      "key": "openProcRFQ__15238",
+      "group": "supply",
+      "line": 15238,
+      "bytes": 271
+    },
+    {
+      "name": "submitProcProposal",
+      "key": "submitProcProposal__15256",
+      "group": "supply",
+      "line": 15256,
+      "bytes": 462
+    },
+    {
+      "name": "exportProcRFQ",
+      "key": "exportProcRFQ__15266",
+      "group": "supply",
+      "line": 15266,
+      "bytes": 245
+    },
+    {
+      "name": "previewProcImport",
+      "key": "previewProcImport__15277",
+      "group": "supply",
+      "line": 15277,
+      "bytes": 1224
+    },
+    {
+      "name": "saveProcImport",
+      "key": "saveProcImport__15281",
+      "group": "supply",
+      "line": 15281,
+      "bytes": 251
+    },
+    {
+      "name": "openProcProposal",
+      "key": "openProcProposal__15282",
+      "group": "supply",
+      "line": 15282,
+      "bytes": 1638
+    },
+    {
+      "name": "saveProcProposalReview",
+      "key": "saveProcProposalReview__15287",
+      "group": "supply",
+      "line": 15287,
+      "bytes": 280
+    },
+    {
+      "name": "createProcPOs",
+      "key": "createProcPOs__15288",
+      "group": "supply",
+      "line": 15288,
+      "bytes": 584
+    },
+    {
+      "name": "printProcPO",
+      "key": "printProcPO__15292",
+      "group": "supply",
+      "line": 15292,
+      "bytes": 2636
+    },
+    {
+      "name": "printProcRequisition",
+      "key": "printProcRequisition__15297",
+      "group": "supply",
+      "line": 15297,
+      "bytes": 1876
+    },
+    {
+      "name": "renderLabelTab",
+      "key": "renderLabelTab__15455",
+      "group": "warehouse",
+      "line": 15455,
+      "bytes": 8343
+    },
+    {
+      "name": "renderChinaImportTab",
+      "key": "renderChinaImportTab__16017",
+      "group": "warehouse",
+      "line": 16017,
+      "bytes": 6763
+    },
+    {
+      "name": "openChinaShipmentForm",
+      "key": "openChinaShipmentForm__16136",
+      "group": "warehouse",
+      "line": 16136,
+      "bytes": 1032
+    },
+    {
+      "name": "saveChinaShipmentNew",
+      "key": "saveChinaShipmentNew__16261",
+      "group": "warehouse",
+      "line": 16261,
+      "bytes": 970
+    },
+    {
+      "name": "saveChinaShipmentEdit",
+      "key": "saveChinaShipmentEdit__16285",
+      "group": "warehouse",
+      "line": 16285,
+      "bytes": 720
+    },
+    {
+      "name": "openChinaImportExcel",
+      "key": "openChinaImportExcel__16392",
+      "group": "warehouse",
+      "line": 16392,
+      "bytes": 1294
+    },
+    {
+      "name": "cnDoReadExcel",
+      "key": "cnDoReadExcel__16418",
+      "group": "warehouse",
+      "line": 16418,
+      "bytes": 1657
+    },
+    {
+      "name": "cnDoPreview",
+      "key": "cnDoPreview__16568",
+      "group": "warehouse",
+      "line": 16568,
+      "bytes": 1921
+    },
+    {
+      "name": "cnDoSaveFromExcel",
+      "key": "cnDoSaveFromExcel__16813",
+      "group": "warehouse",
+      "line": 16813,
+      "bytes": 744
+    },
+    {
+      "name": "openChinaReceiveForm",
+      "key": "openChinaReceiveForm__16838",
+      "group": "warehouse",
+      "line": 16838,
+      "bytes": 4281
+    },
+    {
+      "name": "cnDoReceive",
+      "key": "cnDoReceive__16976",
+      "group": "warehouse",
+      "line": 16976,
+      "bytes": 663
+    },
+    {
+      "name": "openChinaShipmentDetail",
+      "key": "openChinaShipmentDetail__17000",
+      "group": "warehouse",
+      "line": 17000,
+      "bytes": 4316
+    },
+    {
+      "name": "openChinaReport",
+      "key": "openChinaReport__17066",
+      "group": "warehouse",
+      "line": 17066,
+      "bytes": 3536
+    },
+    {
+      "name": "cnDoCancelReceipt",
+      "key": "cnDoCancelReceipt__17135",
+      "group": "warehouse",
+      "line": 17135,
+      "bytes": 350
+    },
+    {
+      "name": "openChinaIQCForm",
+      "key": "openChinaIQCForm__17187",
+      "group": "warehouse",
+      "line": 17187,
+      "bytes": 654
+    },
+    {
+      "name": "cnDoConfirmIQC",
+      "key": "cnDoConfirmIQC__17380",
+      "group": "warehouse",
+      "line": 17380,
+      "bytes": 1149
+    },
+    {
+      "name": "whMutateTransfer_",
+      "key": "whMutateTransfer___17426",
+      "group": "warehouse",
+      "line": 17426,
+      "bytes": 655
+    },
+    {
+      "name": "qrbAddQr",
+      "key": "qrbAddQr__17718",
+      "group": "warehouse",
+      "line": 17718,
+      "bytes": 2719
+    },
+    {
+      "name": "qrbPasteMultiConfirm",
+      "key": "qrbPasteMultiConfirm__18079",
+      "group": "warehouse",
+      "line": 18079,
+      "bytes": 620
+    },
+    {
+      "name": "qrbSubmit",
+      "key": "qrbSubmit__18162",
+      "group": "warehouse",
+      "line": 18162,
+      "bytes": 2168
+    },
+    {
+      "name": "openLocationAuditHistory",
+      "key": "openLocationAuditHistory__18232",
+      "group": "warehouse",
+      "line": 18232,
+      "bytes": 4317
+    },
+    {
+      "name": "bomDoMerge",
+      "key": "bomDoMerge__18722",
+      "group": "supply",
+      "line": 18722,
+      "bytes": 1704
+    },
+    {
+      "name": "bomDoSplit",
+      "key": "bomDoSplit__18814",
+      "group": "supply",
+      "line": 18814,
+      "bytes": 648
+    },
+    {
+      "name": "bomDoBulkSetCritical",
+      "key": "bomDoBulkSetCritical__18889",
+      "group": "supply",
+      "line": 18889,
+      "bytes": 599
+    },
+    {
+      "name": "bomDoBulkSetDRI",
+      "key": "bomDoBulkSetDRI__18904",
+      "group": "supply",
+      "line": 18904,
+      "bytes": 584
+    },
+    {
+      "name": "bomDoDeleteModule",
+      "key": "bomDoDeleteModule__18941",
+      "group": "supply",
+      "line": 18941,
+      "bytes": 483
+    },
+    {
+      "name": "openStageTree",
+      "key": "openStageTree__19013",
+      "group": "production",
+      "line": 19013,
+      "bytes": 866
+    },
+    {
+      "name": "stageSaveGroup",
+      "key": "stageSaveGroup__19314",
+      "group": "production",
+      "line": 19314,
+      "bytes": 1147
+    },
+    {
+      "name": "stageSaveSingle",
+      "key": "stageSaveSingle__19410",
+      "group": "production",
+      "line": 19410,
+      "bytes": 740
+    },
+    {
+      "name": "openStageConfigModal",
+      "key": "openStageConfigModal__19437",
+      "group": "production",
+      "line": 19437,
+      "bytes": 2394
+    },
+    {
+      "name": "stageSaveConfig",
+      "key": "stageSaveConfig__19509",
+      "group": "production",
+      "line": 19509,
+      "bytes": 1155
+    },
+    {
+      "name": "openChatPanel",
+      "key": "openChatPanel__19573",
+      "group": "production",
+      "line": 19573,
+      "bytes": 1207
+    },
+    {
+      "name": "chatLoadInitial",
+      "key": "chatLoadInitial__19654",
+      "group": "production",
+      "line": 19654,
+      "bytes": 893
+    },
+    {
+      "name": "chatSendQuick",
+      "key": "chatSendQuick__19851",
+      "group": "production",
+      "line": 19851,
+      "bytes": 412
+    },
+    {
+      "name": "chatSend",
+      "key": "chatSend__19867",
+      "group": "production",
+      "line": 19867,
+      "bytes": 502
+    },
+    {
+      "name": "chatPickImages",
+      "key": "chatPickImages__19888",
+      "group": "production",
+      "line": 19888,
+      "bytes": 1274
+    },
+    {
+      "name": "chatLoadMore",
+      "key": "chatLoadMore__19977",
+      "group": "production",
+      "line": 19977,
+      "bytes": 940
+    },
+    {
+      "name": "chatRefreshBadge",
+      "key": "chatRefreshBadge__20027",
+      "group": "production",
+      "line": 20027,
+      "bytes": 193
+    },
+    {
+      "name": "openChatFullForm",
+      "key": "openChatFullForm__20047",
+      "group": "production",
+      "line": 20047,
+      "bytes": 2475
+    },
+    {
+      "name": "chatSendFull",
+      "key": "chatSendFull__20092",
+      "group": "production",
+      "line": 20092,
+      "bytes": 1308
+    },
+    {
+      "name": "openMil4MFromChat",
+      "key": "openMil4MFromChat__20231",
+      "group": "production",
+      "line": 20231,
+      "bytes": 980
+    },
+    {
+      "name": "openMil4MManualForm",
+      "key": "openMil4MManualForm__20262",
+      "group": "production",
+      "line": 20262,
+      "bytes": 265
+    },
+    {
+      "name": "mil4mLoadOptions",
+      "key": "mil4mLoadOptions__20273",
+      "group": "production",
+      "line": 20273,
+      "bytes": 744
+    },
+    {
+      "name": "mil4mSubmitCreate",
+      "key": "mil4mSubmitCreate__20370",
+      "group": "production",
+      "line": 20370,
+      "bytes": 2300
+    },
+    {
+      "name": "mil4mRefreshList",
+      "key": "mil4mRefreshList__20424",
+      "group": "production",
+      "line": 20424,
+      "bytes": 570
+    },
+    {
+      "name": "openMil4MDetail",
+      "key": "openMil4MDetail__20536",
+      "group": "production",
+      "line": 20536,
+      "bytes": 4414
+    },
+    {
+      "name": "mil4mQuickStatus",
+      "key": "mil4mQuickStatus__20612",
+      "group": "production",
+      "line": 20612,
+      "bytes": 316
+    },
+    {
+      "name": "mil4mClose",
+      "key": "mil4mClose__20621",
+      "group": "production",
+      "line": 20621,
+      "bytes": 627
+    },
+    {
+      "name": "mil4mCloseConfirm",
+      "key": "mil4mCloseConfirm__20636",
+      "group": "production",
+      "line": 20636,
+      "bytes": 403
+    },
+    {
+      "name": "mil4mOpenEdit",
+      "key": "mil4mOpenEdit__20646",
+      "group": "production",
+      "line": 20646,
+      "bytes": 708
+    },
+    {
+      "name": "openGeneralPurchaseRequest",
+      "key": "openGeneralPurchaseRequest__20756",
+      "group": "supply",
+      "line": 20756,
+      "bytes": 1475
+    },
+    {
+      "name": "saveGeneralPurchaseRequest",
+      "key": "saveGeneralPurchaseRequest__20757",
+      "group": "supply",
+      "line": 20757,
+      "bytes": 910
+    },
+    {
+      "name": "renderGeneralStockIssues",
+      "key": "renderGeneralStockIssues__20759",
+      "group": "warehouse",
+      "line": 20759,
+      "bytes": 913
+    },
+    {
+      "name": "openGeneralStockIssue",
+      "key": "openGeneralStockIssue__20760",
+      "group": "warehouse",
+      "line": 20760,
+      "bytes": 1581
+    },
+    {
+      "name": "saveGeneralStockIssue",
+      "key": "saveGeneralStockIssue__20761",
+      "group": "warehouse",
+      "line": 20761,
+      "bytes": 833
+    },
+    {
+      "name": "openBOMTasks",
+      "key": "openBOMTasks__20763",
+      "group": "supply",
+      "line": 20763,
+      "bytes": 1087
+    },
+    {
+      "name": "openBOMTaskForm",
+      "key": "openBOMTaskForm__20764",
+      "group": "supply",
+      "line": 20764,
+      "bytes": 1670
+    },
+    {
+      "name": "saveBOMTaskForm",
+      "key": "saveBOMTaskForm__20765",
+      "group": "supply",
+      "line": 20765,
+      "bytes": 769
+    },
+    {
+      "name": "openQuickBOMCreate",
+      "key": "openQuickBOMCreate__20766",
+      "group": "supply",
+      "line": 20766,
+      "bytes": 587
+    },
+    {
+      "name": "openBOMImpact",
+      "key": "openBOMImpact__20767",
+      "group": "supply",
+      "line": 20767,
+      "bytes": 1307
+    },
+    {
+      "name": "renderUnifiedIssues",
+      "key": "renderUnifiedIssues__20769",
+      "group": "quality",
+      "line": 20769,
+      "bytes": 1373
+    },
+    {
+      "name": "renderDeliveryRecords",
+      "key": "renderDeliveryRecords__20778",
+      "group": "quality",
+      "line": 20778,
+      "bytes": 880
+    },
+    {
+      "name": "openDeliveryForm",
+      "key": "openDeliveryForm__20779",
+      "group": "quality",
+      "line": 20779,
+      "bytes": 953
+    },
+    {
+      "name": "saveDeliveryForm",
+      "key": "saveDeliveryForm__20780",
+      "group": "quality",
+      "line": 20780,
+      "bytes": 561
+    },
+    {
+      "name": "renderFATTemplates",
+      "key": "renderFATTemplates__20782",
+      "group": "quality",
+      "line": 20782,
+      "bytes": 625
+    },
+    {
+      "name": "saveFATTemplateForm",
+      "key": "saveFATTemplateForm__20784",
+      "group": "quality",
+      "line": 20784,
+      "bytes": 514
+    },
+    {
+      "name": "openApplyFATTemplate",
+      "key": "openApplyFATTemplate__20790",
+      "group": "quality",
+      "line": 20790,
+      "bytes": 858
+    },
+    {
+      "name": "applyFATTemplateNow",
+      "key": "applyFATTemplateNow__20791",
+      "group": "quality",
+      "line": 20791,
+      "bytes": 308
+    },
+    {
+      "name": "approveFATNow",
+      "key": "approveFATNow__20793",
+      "group": "quality",
+      "line": 20793,
+      "bytes": 331
+    },
+    {
+      "name": "openWarehouseReceiptForm",
+      "key": "openWarehouseReceiptForm__20802",
+      "group": "warehouse",
+      "line": 20802,
+      "bytes": 1658
+    },
+    {
+      "name": "saveWarehouseReceipt",
+      "key": "saveWarehouseReceipt__20811",
+      "group": "warehouse",
+      "line": 20811,
+      "bytes": 1210
+    },
+    {
+      "name": "renderWarehouseOpsTab",
+      "key": "renderWarehouseOpsTab__20815",
+      "group": "warehouse",
+      "line": 20815,
+      "bytes": 2011
+    },
+    {
+      "name": "saveWarehouseReIQC",
+      "key": "saveWarehouseReIQC__20817",
+      "group": "warehouse",
+      "line": 20817,
+      "bytes": 714
+    },
+    {
+      "name": "openMaterialKitForm",
+      "key": "openMaterialKitForm__20819",
+      "group": "warehouse",
+      "line": 20819,
+      "bytes": 1647
+    },
+    {
+      "name": "loadKitCandidates",
+      "key": "loadKitCandidates__20821",
+      "group": "warehouse",
+      "line": 20821,
+      "bytes": 1549
+    },
+    {
+      "name": "saveMaterialKit",
+      "key": "saveMaterialKit__20822",
+      "group": "warehouse",
+      "line": 20822,
+      "bytes": 688
+    },
+    {
+      "name": "releaseMaterialKitNow",
+      "key": "releaseMaterialKitNow__20823",
+      "group": "warehouse",
+      "line": 20823,
+      "bytes": 343
+    },
+    {
+      "name": "productionWorkspace",
+      "key": "productionWorkspace__20831",
+      "group": "production",
+      "line": 20831,
+      "bytes": 257
+    },
+    {
+      "name": "renderProductionTab",
+      "key": "renderProductionTab__20832",
+      "group": "production",
+      "line": 20832,
+      "bytes": 475
+    },
+    {
+      "name": "openProductionMachine",
+      "key": "openProductionMachine__20844",
+      "group": "production",
+      "line": 20844,
+      "bytes": 2791
+    },
+    {
+      "name": "openMachineProductionPlan",
+      "key": "openMachineProductionPlan__20854",
+      "group": "production",
+      "line": 20854,
+      "bytes": 1573
+    },
+    {
+      "name": "saveMachineProductionPlan",
+      "key": "saveMachineProductionPlan__20857",
+      "group": "production",
+      "line": 20857,
+      "bytes": 692
+    },
+    {
+      "name": "saveCapability",
+      "key": "saveCapability__20859",
+      "group": "production",
+      "line": 20859,
+      "bytes": 366
+    },
+    {
+      "name": "saveTrainingPlanForm",
+      "key": "saveTrainingPlanForm__20861",
+      "group": "production",
+      "line": 20861,
+      "bytes": 499
+    },
+    {
+      "name": "openMaterialRequirementPicker",
+      "key": "openMaterialRequirementPicker__20865",
+      "group": "supply",
+      "line": 20865,
+      "bytes": 1372
+    },
+    {
+      "name": "saveMaterialRequirementBatch",
+      "key": "saveMaterialRequirementBatch__20869",
+      "group": "supply",
+      "line": 20869,
+      "bytes": 679
+    },
+    {
+      "name": "openMaterialReservation",
+      "key": "openMaterialReservation__20870",
+      "group": "supply",
+      "line": 20870,
+      "bytes": 1792
+    },
+    {
+      "name": "saveMaterialReservation",
+      "key": "saveMaterialReservation__20871",
+      "group": "supply",
+      "line": 20871,
+      "bytes": 422
+    },
+    {
+      "name": "cancelMaterialReservationUI",
+      "key": "cancelMaterialReservationUI__20872",
+      "group": "supply",
+      "line": 20872,
+      "bytes": 344
+    },
+    {
+      "name": "openMachineBOMLineForm",
+      "key": "openMachineBOMLineForm__20876",
+      "group": "production",
+      "line": 20876,
+      "bytes": 1367
+    },
+    {
+      "name": "saveMachineBOMLinesBatch",
+      "key": "saveMachineBOMLinesBatch__20880",
+      "group": "production",
+      "line": 20880,
+      "bytes": 776
+    },
+    {
+      "name": "renderWarehouseOpsTab",
+      "key": "renderWarehouseOpsTab__20883",
+      "group": "warehouse",
+      "line": 20883,
+      "bytes": 4792
+    },
+    {
+      "name": "loadKitCandidates",
+      "key": "loadKitCandidates__20893",
+      "group": "warehouse",
+      "line": 20893,
+      "bytes": 1122
+    },
+    {
+      "name": "saveMaterialKit",
+      "key": "saveMaterialKit__20897",
+      "group": "warehouse",
+      "line": 20897,
+      "bytes": 726
+    },
+    {
+      "name": "renderProductionPlanning",
+      "key": "renderProductionPlanning__20907",
+      "group": "production",
+      "line": 20907,
+      "bytes": 440
+    },
+    {
+      "name": "openProductionStagePlanner",
+      "key": "openProductionStagePlanner__20911",
+      "group": "production",
+      "line": 20911,
+      "bytes": 4196
+    },
+    {
+      "name": "saveProductionStagePlanner",
+      "key": "saveProductionStagePlanner__20915",
+      "group": "production",
+      "line": 20915,
+      "bytes": 1170
+    },
+    {
+      "name": "openStageExecutionFromPlan",
+      "key": "openStageExecutionFromPlan__20917",
+      "group": "production",
+      "line": 20917,
+      "bytes": 117
+    },
+    {
+      "name": "saveStageExecutionV203",
+      "key": "saveStageExecutionV203__20920",
+      "group": "production",
+      "line": 20920,
+      "bytes": 489
+    },
+    {
+      "name": "renderMaterialControlTab",
+      "key": "renderMaterialControlTab__20931",
+      "group": "supply",
+      "line": 20931,
+      "bytes": 3446
+    },
+    {
+      "name": "openMachineMaterials",
+      "key": "openMachineMaterials__20932",
+      "group": "production",
+      "line": 20932,
+      "bytes": 4153
+    },
+    {
+      "name": "renderMaterialControlTab",
+      "key": "renderMaterialControlTab__21035",
+      "group": "supply",
+      "line": 21035,
+      "bytes": 3430
+    },
+    {
+      "name": "openMachineMaterials",
+      "key": "openMachineMaterials__21117",
+      "group": "production",
+      "line": 21117,
+      "bytes": 239
+    },
+    {
+      "name": "checkMachineBOMImport",
+      "key": "checkMachineBOMImport__21157",
+      "group": "production",
+      "line": 21157,
+      "bytes": 1473
+    },
+    {
+      "name": "bomAssignMove",
+      "key": "bomAssignMove__21195",
+      "group": "supply",
+      "line": 21195,
+      "bytes": 842
+    },
+    {
+      "name": "bomQuickCheck",
+      "key": "bomQuickCheck__21237",
+      "group": "supply",
+      "line": 21237,
+      "bytes": 778
+    },
+    {
+      "name": "bomQuickUploadOne",
+      "key": "bomQuickUploadOne__21248",
+      "group": "supply",
+      "line": 21248,
+      "bytes": 400
+    },
+    {
+      "name": "bomQuickImport",
+      "key": "bomQuickImport__21249",
+      "group": "supply",
+      "line": 21249,
+      "bytes": 1595
+    },
+    {
+      "name": "renderProductionTab",
+      "key": "renderProductionTab__21271",
+      "group": "production",
+      "line": 21271,
+      "bytes": 201
+    },
+    {
+      "name": "renderPurchasingTab",
+      "key": "renderPurchasingTab__21273",
+      "group": "supply",
+      "line": 21273,
+      "bytes": 115
+    },
+    {
+      "name": "renderQualityTab",
+      "key": "renderQualityTab__21275",
+      "group": "quality",
+      "line": 21275,
+      "bytes": 164
+    },
+    {
+      "name": "renderCapacityV207",
+      "key": "renderCapacityV207__21277",
+      "group": "production",
+      "line": 21277,
+      "bytes": 2878
+    },
+    {
+      "name": "saveOutsourceV207",
+      "key": "saveOutsourceV207__21280",
+      "group": "production",
+      "line": 21280,
+      "bytes": 531
+    },
+    {
+      "name": "renderDocumentsV207",
+      "key": "renderDocumentsV207__21282",
+      "group": "production",
+      "line": 21282,
+      "bytes": 1870
+    },
+    {
+      "name": "saveDocumentV207",
+      "key": "saveDocumentV207__21284",
+      "group": "production",
+      "line": 21284,
+      "bytes": 583
+    },
+    {
+      "name": "renderCostsV207",
+      "key": "renderCostsV207__21286",
+      "group": "production",
+      "line": 21286,
+      "bytes": 2064
+    },
+    {
+      "name": "saveCostV207",
+      "key": "saveCostV207__21288",
+      "group": "production",
+      "line": 21288,
+      "bytes": 512
+    },
+    {
+      "name": "renderSubcontractV207",
+      "key": "renderSubcontractV207__21290",
+      "group": "supply",
+      "line": 21290,
+      "bytes": 2453
+    },
+    {
+      "name": "saveSubcontractV207",
+      "key": "saveSubcontractV207__21292",
+      "group": "supply",
+      "line": 21292,
+      "bytes": 670
+    },
+    {
+      "name": "renderQualityGatesV207",
+      "key": "renderQualityGatesV207__21296",
+      "group": "quality",
+      "line": 21296,
+      "bytes": 2231
+    },
+    {
+      "name": "saveGateTemplateV207",
+      "key": "saveGateTemplateV207__21300",
+      "group": "quality",
+      "line": 21300,
+      "bytes": 401
+    },
+    {
+      "name": "applyGateV207",
+      "key": "applyGateV207__21302",
+      "group": "quality",
+      "line": 21302,
+      "bytes": 245
+    },
+    {
+      "name": "saveGateCheckV207",
+      "key": "saveGateCheckV207__21304",
+      "group": "quality",
+      "line": 21304,
+      "bytes": 329
+    },
+    {
+      "name": "renderFieldServiceV207",
+      "key": "renderFieldServiceV207__21306",
+      "group": "quality",
+      "line": 21306,
+      "bytes": 2629
+    },
+    {
+      "name": "saveCommissioningV207",
+      "key": "saveCommissioningV207__21308",
+      "group": "quality",
+      "line": 21308,
+      "bytes": 582
+    },
+    {
+      "name": "saveServiceTicketV207",
+      "key": "saveServiceTicketV207__21310",
+      "group": "quality",
+      "line": 21310,
+      "bytes": 624
+    },
+    {
+      "name": "saveModule",
+      "key": "saveModule__21334",
+      "group": "supply",
+      "line": 21334,
+      "bytes": 835
+    },
+    {
+      "name": "openBOMDocumentsV208",
+      "key": "openBOMDocumentsV208__21336",
+      "group": "supply",
+      "line": 21336,
+      "bytes": 2034
+    },
+    {
+      "name": "saveDocumentV207",
+      "key": "saveDocumentV207__21339",
+      "group": "production",
+      "line": 21339,
+      "bytes": 717
+    },
+    {
+      "name": "renderBOMManagement",
+      "key": "renderBOMManagement__21405",
+      "group": "supply",
+      "line": 21405,
+      "bytes": 89
+    },
+    {
+      "name": "renderPurchasingTab",
+      "key": "renderPurchasingTab__21409",
+      "group": "supply",
+      "line": 21409,
+      "bytes": 109
+    },
+    {
+      "name": "renderPaymentsV209",
+      "key": "renderPaymentsV209__21410",
+      "group": "supply",
+      "line": 21410,
+      "bytes": 1883
+    },
+    {
+      "name": "savePaymentV209",
+      "key": "savePaymentV209__21425",
+      "group": "supply",
+      "line": 21425,
+      "bytes": 1078
+    },
+    {
+      "name": "reviewPaymentV209",
+      "key": "reviewPaymentV209__21426",
+      "group": "supply",
+      "line": 21426,
+      "bytes": 355
+    },
+    {
+      "name": "markPaymentPaidV209",
+      "key": "markPaymentPaidV209__21427",
+      "group": "supply",
+      "line": 21427,
+      "bytes": 294
+    },
+    {
+      "name": "exportPaymentRequestV209",
+      "key": "exportPaymentRequestV209__21428",
+      "group": "supply",
+      "line": 21428,
+      "bytes": 2068
+    },
+    {
+      "name": "renderQualityTab",
+      "key": "renderQualityTab__21431",
+      "group": "quality",
+      "line": 21431,
+      "bytes": 228
+    },
+    {
+      "name": "renderQualityFinalV209",
+      "key": "renderQualityFinalV209__21432",
+      "group": "quality",
+      "line": 21432,
+      "bytes": 554
+    },
+    {
+      "name": "renderQualityInspectionV209",
+      "key": "renderQualityInspectionV209__21433",
+      "group": "quality",
+      "line": 21433,
+      "bytes": 3138
+    },
+    {
+      "name": "saveProcessInspectionV209",
+      "key": "saveProcessInspectionV209__21439",
+      "group": "production",
+      "line": 21439,
+      "bytes": 728
+    },
+    {
+      "name": "renderWarehouseOpsTab",
+      "key": "renderWarehouseOpsTab__21527",
+      "group": "warehouse",
+      "line": 21527,
+      "bytes": 1238
+    },
+    {
+      "name": "renderMaterialControlTab",
+      "key": "renderMaterialControlTab__21729",
+      "group": "supply",
+      "line": 21729,
+      "bytes": 220
+    },
+    {
+      "name": "renderLabelTab",
+      "key": "renderLabelTab__21868",
+      "group": "warehouse",
+      "line": 21868,
+      "bytes": 102
+    },
+    {
+      "name": "bomAllocSaveV216",
+      "key": "bomAllocSaveV216__22050",
+      "group": "supply",
+      "line": 22050,
+      "bytes": 779
+    },
+    {
+      "name": "openMachineMaterials",
+      "key": "openMachineMaterials__22128",
+      "group": "production",
+      "line": 22128,
+      "bytes": 1064
+    },
+    {
+      "name": "previewProcImportV219",
+      "key": "previewProcImportV219__22196",
+      "group": "supply",
+      "line": 22196,
+      "bytes": 1876
+    },
+    {
+      "name": "saveProcImportV219",
+      "key": "saveProcImportV219__22208",
+      "group": "supply",
+      "line": 22208,
+      "bytes": 342
+    },
+    {
+      "name": "openProcProposal",
+      "key": "openProcProposal__22228",
+      "group": "supply",
+      "line": 22228,
+      "bytes": 3226
+    }
+  ],
+  "previousBuild": "v20.23-e633a2241a54"
+}

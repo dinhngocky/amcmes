@@ -1,0 +1,24 @@
+{
+  "build": "v20.24-969a11832328",
+  "passed": 18,
+  "tests": [
+    "new version inherits 101 lines with zero copied rows; pages/filter/sort use the whole BOM",
+    "editing inherited line writes one revision and leaves released V1 immutable",
+    "no-op edit writes no new row and deleting inherited line uses one tombstone",
+    "delete edited inheritance stays removed; delete newly added row needs no tombstone",
+    "release diff and CTB sync see full effective version, then V3 inherits without copies",
+    "draft deletion removes only its physical changes; released versions reject writes",
+    "bulk move, critical update and duplicate never mutate ancestor rows",
+    "allocation editor splits inherited quantity correctly, keeps parent and unrelated lines",
+    "legacy snapshot does not accidentally inherit BaseVersionID; cycles and foreign parents fail",
+    "canonical Products join supplies current labels; financial snapshots are left intact",
+    "material pages exclude other machines and filters operate beyond first page; CTB uses full scope",
+    "Excel without module or module quantity imports at machine level; assign a module later",
+    "Excel module ID and module code alone reuse the correct existing module",
+    "cold scoped read returns only matching rows and warm scope avoids Sheet reads",
+    "late module assignment updates live links without changing requirement or history IDs",
+    "machine scoped PR list finds item-level links and keeps unscoped API compatible",
+    "dedicated procurement accepts whole-machine requirements and still rejects invalid module IDs",
+    "unassigning a BOM line removes stale module labels and retains quantity"
+  ]
+}
