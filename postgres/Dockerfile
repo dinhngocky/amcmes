@@ -10,4 +10,4 @@ USER node
 WORKDIR /opt/amcvn/postgres
 ENV HOST=0.0.0.0 PORT=3000
 EXPOSE 3000
-CMD ["npm","start"]
+CMD ["sh","-c","npm run db:init && exec npm start"]

@@ -6,7 +6,6 @@ services:
     region: singapore
     dockerfilePath: ./postgres/Dockerfile
     dockerContext: .
-    dockerCommand: /bin/sh -c "npm run db:init && npm start"
     healthCheckPath: /health
     autoDeployTrigger: commit
     envVars:
@@ -34,4 +33,3 @@ databases:
     plan: free
     region: singapore
     postgresMajorVersion: "17"
-
